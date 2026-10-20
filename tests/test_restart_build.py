@@ -66,8 +66,8 @@ class RestartBuildContractTests(unittest.TestCase):
             build_restart._copy_allowlist(build_restart.PROJECT_ROOT, portable)
             entry = portable / "source" / "inspection_cli.py"
             for option, expected in (("--help", "usage:"), ("--version", "0.3.0-landable")):
-                result = subprocess.run([sys.executable, "-B", str(entry), option], cwd=temporary,
-                                        capture_output=True, text=True, check=False)
+                result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(entry), option], cwd=temporary,
+                                        capture_output=True, text=True, encoding="utf-8", check=False)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(expected, result.stdout.lower() if option == "--help" else result.stdout)
 
