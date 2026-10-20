@@ -193,7 +193,9 @@ class DesktopAppContracts(unittest.TestCase):
         initial_width, initial_height = 1240, 840
         initial_geometry = f"{initial_width}x{initial_height}"
         try:
-            app = InspectionDesktop(root)
+            synthetic_app_root = Path("C:/synthetic-test-root") / ("nested-folder-" * 12)
+            with mock.patch("desktop_ui.application_root", return_value=synthetic_app_root):
+                app = InspectionDesktop(root)
             root.update()
             root.maxsize(window_max_width, window_max_height)
             root.geometry(initial_geometry)
@@ -501,12 +503,6 @@ class DesktopAppContracts(unittest.TestCase):
                 reports_frame = source_card.grid_slaves(row=12)[0]
                 cases_entry = cases_frame.grid_slaves(row=0, column=0)[0]
                 reports_entry = reports_frame.grid_slaves(row=0, column=0)[0]
-                synthetic_prefix = "C:\\synthetic-test-root\\" + "nested-folder-" * 12
-                cases_path = synthetic_prefix + "cases"
-                reports_path = synthetic_prefix + "reports"
-                app.cases_var.set(cases_path)
-                app.reports_var.set(reports_path)
-                root.update()
                 self.assertEqual(cases_entry.get(), app.cases_var.get())
                 self.assertEqual(reports_entry.get(), app.reports_var.get())
                 cases_font = Font(root=root, font=cases_entry.cget("font"))
