@@ -67,4 +67,8 @@ The project owner selected Apache-2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE),
 
 ## Data and security
 
-Inspection evidence, analysis files, reports, and logs may contain sensitive information. Keep them local, review every export before sharing, and do not upload real inspection data by default. See [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [DEPENDENCIES.md](DEPENDENCIES.md). The existing Git history is not suitable for public reuse as-is; the public source snapshot must use the reviewed allowlist without `.git` history.
+Inspection evidence, analysis files, reports, and logs may contain sensitive information. Keep them local, review every export before sharing, and do not upload real inspection data by default. See [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [DEPENDENCIES.md](DEPENDENCIES.md).
+
+## Source snapshot
+
+This repository was initialized from the reviewed 97-file source snapshot at commit `82d1c79ecea2e225dcf25020a45e16b8843672b8`. It contains no history from the original private repository.

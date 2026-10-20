@@ -67,4 +67,8 @@ python -B tests\run_unit_tests.py
 
 ## 数据与安全
 
-巡检证据、分析文件、报告和日志可能包含敏感信息。请将其保留在本地，分享前逐项检查导出内容；默认不上传真实巡检数据。详见 [SECURITY.md](SECURITY.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和[依赖许可证清单](DEPENDENCIES.md)。现有 Git 历史不适合直接公开复用；公开源码快照必须按已审核白名单生成，且不带 `.git` 历史。
+巡检证据、分析文件、报告和日志可能包含敏感信息。请将其保留在本地，分享前逐项检查导出内容；默认不上传真实巡检数据。详见 [SECURITY.md](SECURITY.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和[依赖许可证清单](DEPENDENCIES.md)。
+
+## 源码快照
+
+本仓库由已审核的 97 文件源码快照初始化，快照提交为 `82d1c79ecea2e225dcf25020a45e16b8843672b8`。本仓库不包含原私有仓库的 Git 历史。

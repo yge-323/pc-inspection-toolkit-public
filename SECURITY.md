@@ -13,6 +13,6 @@ PC Inspection Toolkit is a Preview tool for systems and evidence that the operat
 
 ## Reporting a security issue
 
-No public security-reporting channel has been verified for this repository. The repository is currently private, and the available read-only GitHub connection cannot inspect its private-vulnerability-reporting setting. Before making the repository public, maintainers must enable and test GitHub's **Report a vulnerability** flow (private vulnerability reporting), or publish a monitored security contact that is confirmed to work. Do not use a public issue for an unpatched vulnerability. Until that reporting route is verified, do not publish the repository.
+Report security vulnerabilities through [GitHub private vulnerability reporting](https://github.com/yge-323/pc-inspection-toolkit-public/security/advisories/new). Do not post unpatched vulnerability details in public issues. If GitHub does not offer the private report form, do not disclose details publicly; no alternative private reporting channel has been verified.
 
-When the private reporting flow is available, send only a minimal redacted reproduction. Do not include credentials, access data, real inspection evidence, or customer/host details.
+Send only a minimal redacted reproduction. Do not include credentials, access data, real inspection evidence, or customer/host details.
