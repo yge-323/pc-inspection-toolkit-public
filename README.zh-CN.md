@@ -6,6 +6,18 @@
 
 PC Inspection Toolkit 是供获授权维护工作使用的只读巡检与离线证据分析工具，用于展示采集事实、确定性发现、证据缺口和人工核查步骤。它不会自动整改系统或提权。
 
+桌面 GUI 使用中文。
+
+## 预览界面
+
+以下截图来自真实 Windows 桌面应用；截图中的路径为合成示例。
+
+![巡检概览](docs/assets/preview-overview.png)
+
+![本机巡检](docs/assets/preview-local-inspection.png)
+
+![证据导入](docs/assets/preview-evidence-import.png)
+
 ## 当前源码能力
 
 - 中文 Windows 桌面向导：经明确授权后，对当前电脑进行只读采集或导入证据。桌面 GUI 已在 Windows 环境开发和验证；这不代表干净机器或管理员权限验收通过。
@@ -17,25 +29,45 @@ PC Inspection Toolkit 是供获授权维护工作使用的只读巡检与离线�
 
 ## 平台与验证限制
 
-当前源码 GUI 已在 Windows 11 上使用合成或脱敏证据进行验证，并有 Windows 采集器契约测试。真实本机采集、干净 Windows 安装、普通用户与管理员权限矩阵或广泛硬件检查尚未验收。CLI 包含 Windows 与 POSIX 采集分支；不宣称支持所有 Linux 发行版、旧服务器或 macOS 版本。POSIX 采集及粘贴流程要求操作者已获得目标授权。AIX、Windows Server 2008、RHEL 5/6、真实 4A 环境、SMART/RAID 和厂商专用硬件检查仍未验证。工具不能保证发现所有安全或维护问题。
+桌面 GUI 已在 Windows 11 上运行。本预览的启动演练使用 Python 3.12.10 和 Tk 8.6.15；截图使用合成路径，演练没有采集电脑数据。文档要求 Python 3.10 或更高版本及 Tkinter，但并未测试所有 Python/Tk 组合或干净机器安装。真实本机采集、干净 Windows 安装、普通用户与管理员权限矩阵及广泛硬件检查尚未验收。CLI 包含 Windows 与 POSIX 采集分支；这不代表支持所有 Linux 发行版、旧服务器或 macOS 版本。POSIX 采集及粘贴流程要求操作者已获得目标授权。AIX、Windows Server 2008、RHEL 5/6、真实 4A 环境、SMART/RAID 和厂商专用硬件检查仍未验证。工具不能保证发现所有安全或维护问题。
 
 `PARTIAL` 和 `FAILED` 不代表巡检成功。缺失或无法读取的证据会保持未知或不完整，不会被报告为健康。
 
-## 从源码运行
+## 从源码快速开始
 
-Windows 桌面 GUI 需要 Python 3.10 或更高版本及 Tkinter。打开 GUI 不会启动采集：
+克隆公开源码并进入目录：
+
+```powershell
+git clone https://github.com/yge-323/pc-inspection-toolkit-public.git pc-inspection-toolkit-public
+Set-Location .\pc-inspection-toolkit-public
+```
+
+请从你信任的来源准备 Git 和 Python 3.10 或更高版本，并选择包含 Tkinter 的 Python 发行版。GUI 和 CLI 帮助无需额外安装 `pip` 软件包。
+
+Windows 桌面 GUI 需要 Python 3.10 或更高版本及 Tkinter。启动前检查 Python 和 Tkinter：
+
+```powershell
+python --version
+python -c "import tkinter as tk; root=tk.Tk(); print('Tk', root.tk.call('info','patchlevel')); root.destroy()"
+```
+
+启动中文桌面向导。打开界面不会启动采集：
 
 ```powershell
 python -B .\desktop_launcher.py
 ```
 
-CLI 是高级入口。先查看可用命令：
+## 安全的首次体验
+
+1. 启动上面的 GUI，浏览**概览**、**本机巡检**和**证据导入**页面。
+2. 保持授权确认未勾选。首次体验不要启动采集，也不要选择或导入证据；浏览完成后关闭 GUI。
+3. 然后查看高级 CLI 帮助。该命令只显示用法，不会采集或分析证据。
 
 ```powershell
 python -X utf8 -B .\inspection_cli.py --help
 ```
 
-在 Windows 上重定向 CLI 输出时，请使用 Python UTF-8 模式（`-X utf8`），并让读取端按 UTF-8 解码。
+在 Windows 上重定向 CLI 输出时，请使用 Python UTF-8 模式（`-X utf8`），并让读取端按 UTF-8 解码。实际环境与结果见[预览演练记录](docs/PREVIEW_WALKTHROUGH.md)。
 
 只有在取得该电脑巡检授权后才可执行本机巡检：
 
@@ -70,6 +102,14 @@ python -B tests\run_unit_tests.py
 ## 数据与安全
 
 巡检证据、分析文件、报告和日志可能包含敏感信息。请将其保留在本地，分享前逐项检查导出内容；默认不上传真实巡检数据。详见 [SECURITY.md](SECURITY.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和[依赖许可证清单](DEPENDENCIES.md)。
+
+## 故障排查
+
+- **提示 `No module named tkinter` 或 GUI 启动失败：**请改用包含 Tcl/Tk 的 Python 发行版，然后重新运行上面的 Tkinter 检查。本项目不会替你安装 Python 或 Tkinter。
+- **无法运行 `python` 或打开了 Microsoft Store：**先用 `py -3 --version` 检查 Python 启动器是否可用；如果可用，请将上面的 `python` 命令替换为 `py -3`。首次演练不要更改系统设置。
+- **Windows 重定向后的 CLI 输出乱码：**使用 `-X utf8` 重新执行，并让读取端按 UTF-8 解码。
+- **证据不完整：**将 `PARTIAL` 或 `FAILED` 视为不完整结果，检查界面显示的证据缺口；不要把缺失事实理解为健康。
+- **平台或设备类型未列为已验证：**按未验证处理，并使用独立授权且适合该环境的维护流程。
 
 ## 源码快照
 

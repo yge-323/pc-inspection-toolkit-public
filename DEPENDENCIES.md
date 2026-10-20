@@ -1,6 +1,6 @@
 # Dependency and third-party license inventory
 
-Reviewed against source commit `0f9e89ee863cde27b36575501ea056efe3f5c070` on 2026-10-18. The repository has no dependency lockfile or pinned dependency manifest. The entries below identify observed or declared dependency families; they do not identify exact versions installed on a user's machine.
+Public source baseline: [commit `1231491cce01704d195960ba4f5be6185141c547`](https://github.com/yge-323/pc-inspection-toolkit-public/commit/1231491cce01704d195960ba4f5be6185141c547), created on 2026-10-20. The dependency inventory was originally reviewed on 2026-10-18; this documentation-only update changes the public source reference and introduces no runtime dependencies. The repository has no dependency lockfile or pinned dependency manifest. The entries below identify observed or declared dependency families; they do not identify exact versions installed on a user's machine.
 
 | Component | Use in this project | License identified upstream | Included in source snapshot? |
 | --- | --- | --- | --- |
