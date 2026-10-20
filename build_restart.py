@@ -18,7 +18,7 @@ from typing import Callable, Sequence
 PROJECT_ROOT = Path(__file__).resolve().parent
 PRODUCT_NAME = "pc-inspection-toolkit"
 SOURCE_FILES = (
-    "inspection_cli.py", "run_inspection.py", "README.md", "AGENTS.md", "desktop_app.py", "desktop_ui.py", "desktop_launcher.py",
+    "inspection_cli.py", "run_inspection.py", "README.md", "desktop_app.py", "desktop_ui.py", "desktop_launcher.py",
     "docs/PRODUCT.md",
     "LICENSE",
     "analyzers/__init__.py", "analyzers/evidence_analyzer.py", "analyzers/lifecycle.py",

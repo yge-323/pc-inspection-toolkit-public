@@ -186,10 +186,20 @@ class DesktopAppContracts(unittest.TestCase):
             root = tk.Tk()
         except tk.TclError as exc:
             self.skipTest(f"Tk display unavailable: {exc}")
-        root.geometry("1240x840")
+        screen_width, screen_height = root.winfo_screenwidth(), root.winfo_screenheight()
+        window_max_width = max(1240, screen_width)
+        window_max_height = max(840, screen_height)
+        initial_width, initial_height = 1240, 840
+        initial_geometry = f"{initial_width}x{initial_height}"
         try:
             app = InspectionDesktop(root)
             root.update()
+            root.maxsize(window_max_width, window_max_height)
+            root.geometry(initial_geometry)
+            root.update()
+            self.assertEqual((root.winfo_width(), root.winfo_height()), (initial_width, initial_height),
+                             f"Tk did not apply requested initial geometry {initial_geometry}; "
+                             f"screen={screen_width}x{screen_height}, maxsize={root.maxsize()}")
             self.assertEqual(set(app.pages), {"overview", "local", "import", "report", "review"})
             self.assertEqual(len(app.nav_buttons), 5)
             wheel_tags = {page["wheel_tag"] for page in app.pages.values()}
@@ -209,27 +219,46 @@ class DesktopAppContracts(unittest.TestCase):
                     self.assertAlmostEqual(region[3] - region[1], canvas.winfo_height())
             overview = app.pages["overview"]
             review = app.pages["review"]
-            self.assertEqual(overview["scrollbar"].winfo_manager(), "")
-            self.assertEqual(review["scrollbar"].winfo_manager(), "")
-            self.assertLessEqual(
-                overview["canvas"].bbox(overview["window"])[3] - overview["canvas"].bbox(overview["window"])[1],
-                overview["canvas"].winfo_height(),
-            )
 
             def send_wheel(widget, delta: int) -> None:
                 widget.event_generate("<MouseWheel>", delta=delta)
                 root.update()
 
-            review_title = review["header"].winfo_children()[0]
-            for delta in (-120, 120, -240, 240) * 2:
-                send_wheel(review_title, delta)
-                send_wheel(review["content"], delta)
-                self.assertAlmostEqual(review["canvas"].yview()[0], 0.0)
-            review_region = [float(value) for value in review["canvas"].cget("scrollregion").split()]
-            self.assertAlmostEqual(review_region[3] - review_region[1], review["canvas"].winfo_height())
-
-            root.geometry("980x660")
+            initial_overflow = []
+            for page in (overview, review):
+                bounds = page["canvas"].bbox(page["window"])
+                self.assertIsNotNone(bounds)
+                initial_overflow.append(max(0, bounds[3] - bounds[1] - page["canvas"].winfo_height()))
+            fit_height = root.winfo_height() + max(initial_overflow) + 16
+            fit_geometry = f"{root.winfo_width()}x{fit_height}"
+            root.maxsize(window_max_width, max(window_max_height, fit_height))
+            root.geometry(fit_geometry)
             root.update()
+            self.assertEqual((root.winfo_width(), root.winfo_height()),
+                             (initial_width, fit_height),
+                             f"Tk did not apply requested fit geometry {fit_geometry}; "
+                             f"screen={screen_width}x{screen_height}, maxsize={root.maxsize()}")
+            for page in (overview, review):
+                fit_bounds = page["canvas"].bbox(page["window"])
+                self.assertIsNotNone(fit_bounds)
+                self.assertGreater(len(page["content"].winfo_children()), 0)
+                self.assertGreaterEqual(page["canvas"].winfo_height() - (fit_bounds[3] - fit_bounds[1]), 8)
+                self.assertEqual(page["scrollbar"].winfo_manager(), "")
+                fit_region = [float(value) for value in page["canvas"].cget("scrollregion").split()]
+                self.assertAlmostEqual(fit_region[3] - fit_region[1], page["canvas"].winfo_height())
+                for delta in (-120, 120, -240, 240):
+                    send_wheel(page["header"].winfo_children()[0], delta)
+                    send_wheel(page["content"], delta)
+                    self.assertAlmostEqual(page["canvas"].yview()[0], 0.0)
+
+            root.minsize(980, 660)
+            small_width, small_height = 980, 660
+            small_geometry = f"{small_width}x{small_height}"
+            root.geometry(small_geometry)
+            root.update()
+            self.assertEqual((root.winfo_width(), root.winfo_height()), (small_width, small_height),
+                             f"Tk did not apply requested overflow geometry {small_geometry}; "
+                             f"screen={screen_width}x{screen_height}, maxsize={root.maxsize()}")
             app._navigate("overview")
             root.update()
             overview_bounds = overview["canvas"].bbox(overview["window"])
@@ -246,11 +275,17 @@ class DesktopAppContracts(unittest.TestCase):
             send_wheel(review["content"], -120)
             self.assertGreater(review["canvas"].yview()[0], 0.0)
 
-            root.geometry("1240x840")
+            root.geometry(fit_geometry)
             root.update()
+            self.assertEqual((root.winfo_width(), root.winfo_height()), (initial_width, fit_height),
+                             f"Tk did not restore requested fit geometry {fit_geometry}; "
+                             f"screen={screen_width}x{screen_height}, maxsize={root.maxsize()}")
             app._navigate("overview")
             root.update()
             for page in (overview, review):
+                bounds = page["canvas"].bbox(page["window"])
+                self.assertIsNotNone(bounds)
+                self.assertLessEqual(bounds[3] - bounds[1], page["canvas"].winfo_height())
                 self.assertEqual(page["scrollbar"].winfo_manager(), "")
                 self.assertAlmostEqual(page["canvas"].yview()[0], 0.0)
                 region = [float(value) for value in page["canvas"].cget("scrollregion").split()]

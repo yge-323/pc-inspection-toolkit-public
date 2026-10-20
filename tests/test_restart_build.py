@@ -26,7 +26,7 @@ class RestartBuildContractTests(unittest.TestCase):
         self.assertIn("desktop_app.py", build_restart.SOURCE_FILES)
         self.assertIn("desktop_ui.py", build_restart.SOURCE_FILES)
         self.assertIn("docs/PRODUCT.md", build_restart.SOURCE_FILES)
-        self.assertIn("AGENTS.md", build_restart.SOURCE_FILES)
+        self.assertNotIn("AGENTS.md", build_restart.SOURCE_FILES)
         self.assertIn("LICENSE", build_restart.SOURCE_FILES)
         self.assertIn("run_inspection.py", build_restart.SOURCE_FILES)
         for module in ("collectors/system_info.py", "collectors/security_vendors.py", "analyzers/risk_analyzer.py",
@@ -39,6 +39,13 @@ class RestartBuildContractTests(unittest.TestCase):
         })
         self.assertFalse(any("local-profile.json" == item or item.startswith(("build/", "release/", "tools/", "work/"))
                              for item in build_restart.SOURCE_FILES))
+
+    def test_allowlisted_source_validation_fails_closed_when_a_required_file_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(build_restart, "SOURCE_FILES", ("required.txt",)), \
+                    mock.patch.object(build_restart, "PORTABLE_FILES", ()):
+                with self.assertRaisesRegex(FileNotFoundError, "ALLOWLIST_SOURCE_MISSING:required.txt"):
+                    build_restart._validate_sources(Path(temporary))
 
     def test_output_root_must_be_new_and_under_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
