@@ -32,8 +32,10 @@ python -B .\desktop_launcher.py
 CLI 是高级入口。先查看可用命令：
 
 ```powershell
-python -B .\inspection_cli.py --help
+python -X utf8 -B .\inspection_cli.py --help
 ```
+
+在 Windows 上重定向 CLI 输出时，请使用 Python UTF-8 模式（`-X utf8`），并让读取端按 UTF-8 解码。
 
 只有在取得该电脑巡检授权后才可执行本机巡检：
 

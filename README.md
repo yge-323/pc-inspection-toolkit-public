@@ -32,8 +32,10 @@ python -B .\desktop_launcher.py
 The CLI is the advanced interface. Inspect available commands first:
 
 ```powershell
-python -B .\inspection_cli.py --help
+python -X utf8 -B .\inspection_cli.py --help
 ```
+
+On Windows, use Python's UTF-8 mode (`-X utf8`) when redirecting CLI output, and read the redirected output as UTF-8.
 
 Only run a local inspection after obtaining authorization for that computer:
 
