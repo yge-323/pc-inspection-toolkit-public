@@ -180,6 +180,7 @@ class DesktopAppContracts(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt" or os.environ.get("DISPLAY"), "requires a Tk display")
     def test_v3_gui_pages_theme_report_state_and_authorization_gate(self) -> None:
         import tkinter as tk
+        from tkinter.font import Font
         from desktop_ui import InspectionDesktop
 
         try:
@@ -500,8 +501,18 @@ class DesktopAppContracts(unittest.TestCase):
                 reports_frame = source_card.grid_slaves(row=12)[0]
                 cases_entry = cases_frame.grid_slaves(row=0, column=0)[0]
                 reports_entry = reports_frame.grid_slaves(row=0, column=0)[0]
+                synthetic_prefix = "C:\\synthetic-test-root\\" + "nested-folder-" * 12
+                cases_path = synthetic_prefix + "cases"
+                reports_path = synthetic_prefix + "reports"
+                app.cases_var.set(cases_path)
+                app.reports_var.set(reports_path)
+                root.update()
                 self.assertEqual(cases_entry.get(), app.cases_var.get())
                 self.assertEqual(reports_entry.get(), app.reports_var.get())
+                cases_font = Font(root=root, font=cases_entry.cget("font"))
+                reports_font = Font(root=root, font=reports_entry.cget("font"))
+                self.assertGreater(cases_font.measure(cases_entry.get()), cases_entry.winfo_width())
+                self.assertGreater(reports_font.measure(reports_entry.get()), reports_entry.winfo_width())
                 self.assertGreater(cases_entry.xview()[0], 0.0)
                 self.assertGreater(reports_entry.xview()[0], 0.0)
 
