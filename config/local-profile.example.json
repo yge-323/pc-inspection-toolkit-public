@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "profile_id": "local-machine",
+  "machine_match": {
+    "hostnames": []
+  },
+  "expected_accounts": [],
+  "expected_listeners": [],
+  "expected_processes": [],
+  "rule_exceptions": []
+}

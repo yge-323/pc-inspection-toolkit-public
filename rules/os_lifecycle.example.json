@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "rules_version": "2026-10-03",
+  "as_of": "2026-10-03",
+  "records": [
+    {
+      "identity": "centos-linux-7",
+      "product": "CentOS Linux",
+      "version": "7",
+      "support_status": "ended",
+      "normal_support_ended": "2024-06-30",
+      "extended_support_ended": null,
+      "sources": ["https://www.centos.org/centos-linux/"]
+    },
+    {
+      "identity": "rhel-5",
+      "product": "Red Hat Enterprise Linux Server",
+      "version": "5",
+      "support_status": "ended",
+      "normal_support_ended": "2017-03-31",
+      "extended_support_ended": "2020-11-30",
+      "sources": ["https://api.access.redhat.com/articles/4038291"]
+    },
+    {
+      "identity": "rhel-6",
+      "product": "Red Hat Enterprise Linux Server",
+      "version": "6",
+      "support_status": "ended",
+      "normal_support_ended": "2020-11-30",
+      "extended_support_ended": "2024-06-30",
+      "sources": ["https://api.access.redhat.com/articles/4038291"]
+    },
+    {
+      "identity": "windows-server-2008",
+      "product": "Windows Server 2008",
+      "version": "6.0",
+      "support_status": "ended",
+      "normal_support_ended": null,
+      "extended_support_ended": null,
+      "sources": ["https://learn.microsoft.com/en-us/lifecycle/products/windows-server-2008"]
+    },
+    {
+      "identity": "windows-server-2008-r2",
+      "product": "Windows Server 2008 R2",
+      "version": "6.1",
+      "support_status": "ended",
+      "normal_support_ended": null,
+      "extended_support_ended": null,
+      "sources": ["https://learn.microsoft.com/en-us/lifecycle/products/windows-server-2008-r2"]
+    }
+  ]
+}

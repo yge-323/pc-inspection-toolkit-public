@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "base_registry_version": "0.1.0",
+  "overrides": {
+    "thresholds": {},
+    "ports": {},
+    "vendor_patterns": {},
+    "rules": {}
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "rules_version": "0.1.1",
+  "rules": [
+    {
+      "id": "GENERIC_WILDCARD_LISTENER_REVIEW",
+      "title": "未被专属规则覆盖的通配地址监听需要人工确认",
+      "severity": "Info",
+      "platforms": ["windows", "linux", "macos"],
+      "match": {"kind": "wildcard_listener"},
+      "applicability": "仅限已采集监听输出；系统、版本及防火墙语义待确认",
+      "impact": "其他专属候选规则未覆盖的通配监听，仍需结合防火墙、路由和业务依赖确认；监听本身不能证明网络可达。",
+      "recommendation": "确认监听进程、授权访问范围、防火墙规则及业务依赖，再按该软件精确版本评估收敛范围。",
+      "rollback": "任何获批的配置变更前备份原配置；若连接或业务检查失败，恢复备份并复核。",
+      "verification_checkpoint": "复采监听与防火墙事实，并由业务负责人确认客户端访问。"
+    },
+    {
+      "id": "REDIS_WILDCARD_BIND_REVIEW",
+      "title": "Redis 配置存在通配 bind 值",
+      "severity": "Warning",
+      "platforms": ["linux"],
+      "products": ["redis"],
+      "match": {"kind": "config_value_any", "key": "bind", "values": ["*", "0.0.0.0", "::", "0.0.0.0 ::"]},
+      "applicability": "配置线索；Redis 精确版本、ACL/认证能力、防火墙和业务访问范围均需现场确认",
+      "impact": "监听范围可能超过业务所需；配置值本身不能证明网络可达。",
+      "recommendation": "在维护窗口核对客户端来源、防火墙和版本能力，审批后仅保留业务所需绑定地址；不套用其他版本的 ACL 命令。",
+      "rollback": "保留原配置副本；业务连接验证失败时恢复原配置并按既定维护流程复核。",
+      "verification_checkpoint": "复采配置与监听、防火墙，并验证授权客户端连接。"
+    },
+    {
+      "id": "MYSQL_WILDCARD_BIND_REVIEW",
+      "title": "MySQL 配置存在通配 bind-address",
+      "severity": "Warning",
+      "platforms": ["linux"],
+      "products": ["mysql"],
+      "match": {"kind": "config_value_any", "key": "bind-address", "values": ["*", "0.0.0.0", "::"]},
+      "applicability": "配置线索；MySQL 完整版本、TLS、防火墙和业务访问范围需确认",
+      "impact": "服务可能接受超出业务所需网络范围的连接请求；不等同已暴露或可登录。",
+      "recommendation": "先核对连接来源与防火墙，审批后配置所需监听范围；不得仅凭此证据修改生产数据库。",
+      "rollback": "备份原配置；连接验证失败时恢复原配置并验证应用连接。",
+      "verification_checkpoint": "复采配置与监听，使用获批测试账户验证客户端连通性。"
+    },
+    {
+      "id": "NGINX_LEGACY_TLS_CONFIG_REVIEW",
+      "title": "Nginx 配置包含旧 TLS 协议标识",
+      "severity": "Warning",
+      "platforms": ["linux"],
+      "products": ["nginx"],
+      "match": {"kind": "config_value_tokens_any", "key": "ssl_protocols", "values": ["TLSv1", "TLSv1.1"]},
+      "applicability": "仅对被导出的单个配置文件匹配；include 未展开，Nginx/OpenSSL 版本及客户端兼容性未确认",
+      "impact": "旧协议可能不符合当前组织策略；实际可协商协议仍需端到端验证。",
+      "recommendation": "核对完整 include 链、Nginx/OpenSSL 构建与客户端要求，审批后制定兼容升级方案。",
+      "rollback": "保存完整原配置；健康检查或旧客户端验证失败时恢复备份。",
+      "verification_checkpoint": "复采所有相关配置并经批准的 TLS 测试确认协商结果。"
+    },
+    {
+      "id": "TOMCAT_CONNECTOR_TLS_DISABLED_REVIEW",
+      "title": "Tomcat Connector 显式关闭 TLS",
+      "severity": "Info",
+      "platforms": ["linux"],
+      "products": ["tomcat"],
+      "match": {"kind": "config_value_any", "key": "SSLEnabled", "values": ["false"]},
+      "applicability": "仅匹配 server.xml 显式属性；TLS 也可能由可信反向代理终止，需确认部署拓扑与 Tomcat 精确版本",
+      "impact": "此单项配置不能证明业务流量明文传输或外部可达。",
+      "recommendation": "核对反向代理到 Tomcat 的传输保护、Connector 绑定范围和业务拓扑，再决定是否调整。",
+      "rollback": "配置变更前备份原 server.xml；应用启动或健康检查失败时恢复并验证。",
+      "verification_checkpoint": "复采完整 Connector 配置并在授权环境验证代理链路和健康检查。"
+    },
+    {
+      "id": "WAS_SECURITY_DISABLED_REVIEW",
+      "title": "WebSphere 配置显式关闭安全设置",
+      "severity": "Warning",
+      "platforms": ["linux"],
+      "products": ["was"],
+      "match": {"kind": "config_value_any", "key": "enabled", "values": ["false"]},
+      "applicability": "仅限白名单 XML 字段；WebSphere 完整版本、cell/profile 上下文和配置语义待确认",
+      "impact": "该配置线索可能影响管理或传输安全；单个 XML 片段不能确定生效配置。",
+      "recommendation": "由 WebSphere 管理员确认生效 cell/profile、同步状态和安全策略，再制定维护窗口内的人工整改。",
+      "rollback": "保存对应 profile 原始配置副本；同步或服务启动异常时按厂商流程恢复并复核。",
+      "verification_checkpoint": "复采准确 profile/cell 证据，并由管理员验证生效策略和业务连接。"
+    },
+    {
+      "id": "ORACLE_VALID_NODE_CHECK_DISABLED_REVIEW",
+      "title": "Oracle Listener 配置关闭节点来源限制",
+      "severity": "Warning",
+      "platforms": ["linux"],
+      "products": ["oracle"],
+      "match": {"kind": "config_value_any", "key": "tcp.validnode_checking", "values": ["no", "off", "false"]},
+      "applicability": "仅为 listener.ora/sqlnet.ora 白名单配置线索；Oracle 9/10 完整版本、补丁与实际监听器配置待核实",
+      "impact": "如果单位依赖此控制进行来源限制，配置可能不符合策略；防火墙及其他控制尚未检查。",
+      "recommendation": "核对数据库团队批准的网络访问模型及准确版本文档；不得仅凭该文件直接重启 Listener 或改动生产配置。",
+      "rollback": "保留原配置；经批准的变更后连接测试失败则恢复并按 DBA 流程验证。",
+      "verification_checkpoint": "复采配置与 Listener 状态，并由 DBA 通过授权测试连接验证策略。"
+    }
+  ]
+}

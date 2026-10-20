@@ -1,0 +1,61 @@
+# Generated inspection outputs
+outputs/
+/cases/
+/inspection-evidence/
+/work/
+reports/output/
+data/raw/
+data/normalized/
+logs/execution/
+*.csv
+*.html
+!reports/templates/*.html
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+__pycache__/
+*.pyc
+
+# Archives
+*.zip
+
+# Portable packaging artifacts
+.venv-build/
+dist/
+build/windows/work/
+build/windows/rebuild-validation/
+build/windows/rebuild-validation-final/
+
+# PyInstaller candidate intermediate work
+build/windows/candidates/**/work/
+
+# Rebuildable candidate staging copies
+build/windows/candidates/**/staging/
+
+# Machine-local inspection profile
+/config/local-profile.json
+
+# Machine-local risk rule override
+/config/windows-risk-rules.override.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+# Machine-local environments and credentials
+/.venv/
+/.pytest_cache/
+/.mypy_cache/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# Rebuildable build outputs
+/build/
