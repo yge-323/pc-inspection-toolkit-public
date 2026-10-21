@@ -16,6 +16,8 @@ from typing import Any
 from analyzers.evidence_analyzer import analyze_evidence
 from analyzers.listener_risk import DEFAULT_KNOWLEDGE as DEFAULT_LISTENER_KNOWLEDGE, ListenerKnowledgeError, listener_knowledge_error_reason, load_knowledge as load_listener_knowledge
 from analyzers.local_ai import LocalAIError, request_suggestions
+from i18n import normalize_language
+from locales.cli import argument_parser_class, cli_text
 from analyzers.windows_security_rules import native_service_facts
 from analyzers.windows_disk_rules import parse_native_disk_facts
 from evidence.bundle import BundleError, import_bundle, validate_bundle, write_manifest
@@ -354,69 +356,110 @@ def _compare(before: AnalysisResult, after: AnalysisResult, before_meta: dict[st
             "note": "Missing evidence or incomplete analysis is not_checked. Target/rule changes make absent findings not_comparable, never resolved."}
 
 
+def _language_from_argv(argv: list[str], default: str) -> str:
+    for index, item in enumerate(argv):
+        if item in {"--lang", "--language"} and index + 1 < len(argv):
+            try:
+                return normalize_language(argv[index + 1])
+            except ValueError:
+                return default
+        if item.startswith("--lang=") or item.startswith("--language="):
+            try:
+                return normalize_language(item.split("=", 1)[1])
+            except ValueError:
+                return default
+    return default
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline evidence inspection and reporting tool")
-    parser.add_argument("--version", action="version", version=VERSION)
-    sub = parser.add_subparsers(dest="command", required=True)
-    seal = sub.add_parser("seal", help="Create a manifest for a reviewed native evidence directory")
+    argv = list(sys.argv[1:] if argv is None else argv)
+    language = _language_from_argv(argv, "zh-CN")
+    parser_type = argument_parser_class(language)
+    parser = parser_type(description=cli_text("Offline evidence inspection and reporting tool", language), language=language)
+    parser.add_argument("--lang", "--language", dest="language", type=normalize_language,
+                        default="zh-CN", metavar="zh-CN|en-US|zh|en",
+                        help=cli_text("Select the report and human message language", language))
+    report_lang_help = ("Select the report language; defaults to --lang" if language == "en-US"
+                        else "选择报告语言；默认沿用 --lang")
+    parser.add_argument("--report-lang", "--report-language", dest="report_language",
+                        type=normalize_language, default=None, metavar="zh-CN|en-US|zh|en",
+                        help=report_lang_help)
+    parser.add_argument("--version", action="version", version=VERSION,
+                        help=cli_text("Show program version and exit", language))
+    sub = parser.add_subparsers(dest="command", required=True, parser_class=parser_type)
+    seal = sub.add_parser("seal", help=cli_text("Create a manifest for a reviewed native evidence directory", language),
+                          description=cli_text("Create a manifest for a reviewed native evidence directory", language))
     seal.add_argument("directory", type=Path); seal.add_argument("--project-alias", required=True); seal.add_argument("--asset-alias", required=True)
-    seal.add_argument("--target", required=True, type=Path, help="JSON containing exactly: os_family, product, version, architecture, use_case, scope")
-    seal.add_argument("--collection", required=True, type=Path, help="JSON containing exactly: started_at, finished_at, timezone, privilege, collector_version, command_catalog")
+    seal.add_argument("--target", required=True, type=Path, help=cli_text("JSON containing exactly: os_family, product, version, architecture, use_case, scope", language))
+    seal.add_argument("--collection", required=True, type=Path, help=cli_text("JSON containing exactly: started_at, finished_at, timezone, privilege, collector_version, command_catalog", language))
     root = application_root()
-    imp = sub.add_parser("import", help="Validate and import a bundle into a new case directory")
+    imp = sub.add_parser("import", help=cli_text("Validate and import a bundle into a new case directory", language),
+                         description=cli_text("Validate and import a bundle into a new case directory", language))
     imp.add_argument("bundle", type=Path); imp.add_argument("--cases", type=Path, default=root / "data" / "raw" / "cases")
-    analyze = sub.add_parser("analyze", help="Analyze one validated, already imported bundle")
+    analyze = sub.add_parser("analyze", help=cli_text("Analyze one validated, already imported bundle", language),
+                             description=cli_text("Analyze one validated, already imported bundle", language))
     analyze.add_argument("case", type=Path); analyze.add_argument("--output", type=Path, default=root / "reports" / "output")
     analyze.add_argument("--listener-knowledge", type=Path, default=DEFAULT_LISTENER_KNOWLEDGE,
-                         help="Use a validated listener knowledge JSON file (defaults to the bundled example).")
+                         help=cli_text("Use a validated listener knowledge JSON file (defaults to the bundled example).", language))
     analyze.add_argument("--ai-provider", choices=["ollama"]); analyze.add_argument("--ai-endpoint")
-    analyze.add_argument("--ai-model"); analyze.add_argument("--ai-cloud-disabled-ack", action="store_true", help="Assert Ollama cloud features were disabled before use")
+    analyze.add_argument("--ai-model"); analyze.add_argument("--ai-cloud-disabled-ack", action="store_true", help=cli_text("Assert Ollama cloud features were disabled before use", language))
     analyze.add_argument("--ai-timeout", type=float, default=15.0)
-    local = sub.add_parser("analyze-local", help="Run authorized current-Windows collectors and render the same unified reports")
+    local = sub.add_parser("analyze-local", help=cli_text("Run authorized current-Windows collectors and render the same unified reports", language),
+                           description=cli_text("Run authorized current-Windows collectors and render the same unified reports", language))
     local.add_argument("--output", type=Path, default=root / "reports" / "output")
     local.add_argument("--project-alias", required=True)
     local.add_argument("--asset-alias", required=True)
     local.add_argument("--listener-knowledge", type=Path, default=DEFAULT_LISTENER_KNOWLEDGE,
-                       help="Use a validated listener knowledge JSON file (defaults to the bundled example).")
-    cmp = sub.add_parser("compare", help="Compare two analysis.json files")
+                       help=cli_text("Use a validated listener knowledge JSON file (defaults to the bundled example).", language))
+    cmp = sub.add_parser("compare", help=cli_text("Compare two analysis.json files", language), description=cli_text("Compare two analysis.json files", language))
     cmp.add_argument("before", type=Path); cmp.add_argument("after", type=Path); cmp.add_argument("--output", type=Path, required=True)
-    handoff = sub.add_parser("codex-export", help="Write a redacted summary for Codex conversation analysis")
+    handoff = sub.add_parser("codex-export", help=cli_text("Write a redacted summary for Codex conversation analysis", language), description=cli_text("Write a redacted summary for Codex conversation analysis", language))
     handoff.add_argument("analysis", type=Path); handoff.add_argument("--output", type=Path, required=True)
-    sanitize = sub.add_parser("sanitize-config", help="Export selected allow-listed config facts after redaction")
+    sanitize = sub.add_parser("sanitize-config", help=cli_text("Export selected allow-listed config facts after redaction", language), description=cli_text("Export selected allow-listed config facts after redaction", language))
     sanitize.add_argument("--product", choices=["nginx", "tomcat", "redis", "mysql", "oracle", "was"], required=True)
     sanitize.add_argument("--source", type=Path, required=True); sanitize.add_argument("--output-dir", type=Path, required=True)
     sanitize.add_argument("--instance-id", default="instance-1"); sanitize.add_argument("--product-version", default="unknown")
-    remote = sub.add_parser("capture-ssh", help="Capture one explicitly authorized POSIX target using pinned OpenSSH host keys")
+    remote = sub.add_parser("capture-ssh", help=cli_text("Capture one explicitly authorized POSIX target using pinned OpenSSH host keys", language), description=cli_text("Capture one explicitly authorized POSIX target using pinned OpenSSH host keys", language))
     remote.add_argument("--host", required=True); remote.add_argument("--user", required=True); remote.add_argument("--port", type=int, default=22)
     remote.add_argument("--known-hosts", type=Path, required=True); remote.add_argument("--timeout", type=int, default=600)
-    remote.add_argument("--agent-auth", action="store_true", help="Explicitly authorize using the already running SSH agent only; private-key files are never read")
+    remote.add_argument("--agent-auth", action="store_true", help=cli_text("Explicitly authorize using the already running SSH agent only; private-key files are never read", language))
     remote.add_argument("--project-alias", required=True); remote.add_argument("--asset-alias", required=True)
     remote.add_argument("--target", required=True, type=Path); remote.add_argument("--collection", required=True, type=Path)
     remote.add_argument("--cases", type=Path, default=root / "data" / "raw" / "cases")
-    winrm_cmd = sub.add_parser("capture-winrm", help="Capture one explicitly authorized Windows target through HTTPS WinRM")
+    winrm_cmd = sub.add_parser("capture-winrm", help=cli_text("Capture one explicitly authorized Windows target through HTTPS WinRM", language), description=cli_text("Capture one explicitly authorized Windows target through HTTPS WinRM", language))
     winrm_cmd.add_argument("--host", required=True); winrm_cmd.add_argument("--port", type=int, default=5986)
-    winrm_cmd.add_argument("--user-env", required=True, help="Environment variable name containing the WinRM username")
-    winrm_cmd.add_argument("--password-env", required=True, help="Environment variable name containing the WinRM password")
+    winrm_cmd.add_argument("--user-env", required=True, help=cli_text("Environment variable name containing the WinRM username", language))
+    winrm_cmd.add_argument("--password-env", required=True, help=cli_text("Environment variable name containing the WinRM password", language))
     winrm_cmd.add_argument("--project-alias", required=True); winrm_cmd.add_argument("--asset-alias", required=True)
     winrm_cmd.add_argument("--target", required=True, type=Path); winrm_cmd.add_argument("--collection", required=True, type=Path)
     winrm_cmd.add_argument("--cases", type=Path, default=root / "data" / "raw" / "cases")
-    paste = sub.add_parser("paste-import", help="Import bastion/SecureCRT paste block produced by platforms/posix_paste_export.sh")
-    paste.add_argument("paste_file", type=Path, help="Text file containing the full BEGIN/END paste block")
+    paste = sub.add_parser("paste-import", help=cli_text("Import bastion/SecureCRT paste block produced by platforms/posix_paste_export.sh", language), description=cli_text("Import bastion/SecureCRT paste block produced by platforms/posix_paste_export.sh", language))
+    paste.add_argument("paste_file", type=Path, help=cli_text("Text file containing the full BEGIN/END paste block", language))
     paste.add_argument("--project-alias", required=True)
     paste.add_argument("--asset-alias", required=True)
     paste.add_argument("--use-case", required=True, choices=["home_pc", "office_pc", "office_server", "unknown"])
     paste.add_argument("--cases", type=Path, default=root / "data" / "raw" / "cases")
     paste.add_argument("--output", type=Path, default=root / "reports" / "output")
-    paste.add_argument("--analyze", action="store_true", help="Continue to analyze after import")
+    paste.add_argument("--analyze", action="store_true", help=cli_text("Continue to analyze after import", language))
     paste.add_argument("--listener-knowledge", type=Path, default=DEFAULT_LISTENER_KNOWLEDGE)
-    local_any = sub.add_parser("inspect-local", help="One-shot authorized local capture→seal→import→analyze (POSIX or Windows)")
+    local_any = sub.add_parser("inspect-local", help=cli_text("One-shot authorized local capture→seal→import→analyze (POSIX or Windows)", language), description=cli_text("One-shot authorized local capture→seal→import→analyze (POSIX or Windows)", language))
     local_any.add_argument("--project-alias", required=True)
     local_any.add_argument("--asset-alias", required=True)
     local_any.add_argument("--use-case", required=True, choices=["home_pc", "office_pc", "office_server", "unknown"])
     local_any.add_argument("--cases", type=Path, default=root / "data" / "raw" / "cases")
     local_any.add_argument("--output", type=Path, default=root / "reports" / "output")
     local_any.add_argument("--listener-knowledge", type=Path, default=DEFAULT_LISTENER_KNOWLEDGE)
+    subparsers_action = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+    for child_parser in subparsers_action.choices.values():
+        child_parser.add_argument("--lang", "--language", dest="language", type=normalize_language,
+                                  default=argparse.SUPPRESS, metavar="zh-CN|en-US|zh|en",
+                                  help=cli_text("Select the report and human message language", language))
+        child_parser.add_argument("--report-lang", "--report-language", dest="report_language",
+                                  type=normalize_language, default=argparse.SUPPRESS,
+                                  metavar="zh-CN|en-US|zh|en", help=report_lang_help)
     args = parser.parse_args(argv)
+    language = normalize_language(args.language)
+    report_language = normalize_language(getattr(args, "report_language", None) or language)
     try:
         if args.command == "seal":
             path = write_manifest(args.directory, project_alias=args.project_alias, asset_alias=args.asset_alias, target=_json_object(args.target), collection=_json_object(args.collection))
@@ -452,16 +495,19 @@ def main(argv: list[str] | None = None) -> int:
                         metadata["ai_advisory"] = request_suggestions(provider=args.ai_provider, endpoint=args.ai_endpoint,
                                                                        model=args.ai_model, findings=result.findings,
                                                                        cloud_disabled_acknowledged=args.ai_cloud_disabled_ack,
-                                                                       timeout=args.ai_timeout)
+                                                                        timeout=args.ai_timeout, language=report_language)
                     except (LocalAIError, OSError, TimeoutError, ValueError) as exc:
                         metadata["ai_advisory"] = {"status": "AI_FAILED", "reason": f"{type(exc).__name__}: request or response rejected"}
             else:
                 metadata["ai_advisory"] = {"status": "AI_NOT_RUN", "reason": "local AI is opt-in and was not requested"}
             report_dir = args.output / str(manifest["bundle_id"])
-            outputs = write_reports(report_dir, result, metadata)
+            outputs = write_reports(report_dir, result, metadata, report_language)
             print("\n".join(f"{key.upper()}={value}" for key, value in outputs.items()))
             print(f"ANALYSIS_STATUS={result.status}")
             print(f"AI_STATUS={metadata['ai_advisory']['status']}")
+            print("INFO: " + cli_text("Report files were created.", language))
+            if metadata["ai_advisory"]["status"] == "AI_NOT_RUN":
+                print("INFO: " + cli_text("Local AI was not requested; no AI request was sent.", language))
             return 0 if result.status == "OK" else 4
         if args.command == "compare":
             before, before_meta = _load_analysis(args.before); after, after_meta = _load_analysis(args.after)
@@ -528,9 +574,10 @@ def main(argv: list[str] | None = None) -> int:
                         "rules_sha256": rules_hash, "tool_version": VERSION,
                         "support_assessment": "See rule-bound OS lifecycle Finding; paid/contract entitlement is not inferred.",
                         "evidence_summary": _local_summary(collectors), "ai_advisory": {"status": "AI_NOT_RUN", "reason": "Local AI is opt-in and was not requested."}}
-            outputs = write_reports(args.output / datetime.now(timezone.utc).strftime("local-%Y%m%dT%H%M%SZ"), result, metadata)
+            outputs = write_reports(args.output / datetime.now(timezone.utc).strftime("local-%Y%m%dT%H%M%SZ"), result, metadata, report_language)
             print("\n".join(f"{key.upper()}={value}" for key, value in outputs.items()))
             print(f"ANALYSIS_STATUS={result.status}")
+            print("INFO: " + cli_text("Report files were created.", language))
             return 0 if result.status == "OK" else 4
         if args.command == "capture-ssh":
             path = capture_ssh_bundle(host=args.host, user=args.user, port=args.port, known_hosts=args.known_hosts,
@@ -558,10 +605,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"CASE={case}")
             if not args.analyze:
                 return 0
-            return main(["analyze", str(case), "--output", str(args.output),
+            return main(["--lang", language, "--report-lang", report_language,
+                         "analyze", str(case), "--output", str(args.output),
                          "--listener-knowledge", str(args.listener_knowledge)])
         if args.command == "inspect-local":
-            return _inspect_local(args, root)
+            return _inspect_local(args, root, language, report_language)
         result, metadata = _load_analysis(args.analysis)
         safe_metadata = {"target": _safe_codex(metadata.get("target_identity", {})), "rules_version": metadata.get("rules_version"),
                          "rules_sha256": metadata.get("rules_sha256"), "evidence_summary": _safe_codex(metadata.get("evidence_summary", {}))}
@@ -581,10 +629,13 @@ def main(argv: list[str] | None = None) -> int:
         if len(detail) > 240:
             detail = detail[:237] + "..."
         print(f"ERROR={type(exc).__name__}: {detail or 'operation rejected'}", file=sys.stderr)
+        if "language" in locals():
+            print("INFO: " + cli_text("The operation failed. Review the error details.", language), file=sys.stderr)
         return 2
 
 
-def _inspect_local(args: argparse.Namespace, root: Path) -> int:
+def _inspect_local(args: argparse.Namespace, root: Path,
+                   language: str | None = None, report_language: str | None = None) -> int:
     import desktop_app
     import shutil
     import subprocess
@@ -619,7 +670,10 @@ def _inspect_local(args: argparse.Namespace, root: Path) -> int:
     print(f"SEALED={sealed}")
     case = import_bundle(evidence, args.cases)
     print(f"CASE={case}")
-    return main(["analyze", str(case), "--output", str(args.output),
+    human_language = normalize_language(language or args.language)
+    selected_report_language = normalize_language(report_language or getattr(args, "report_language", None) or human_language)
+    return main(["--lang", human_language, "--report-lang", selected_report_language,
+                 "analyze", str(case), "--output", str(args.output),
                  "--listener-knowledge", str(args.listener_knowledge)])
 
 

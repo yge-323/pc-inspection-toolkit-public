@@ -10,6 +10,8 @@ logs/execution/
 *.csv
 *.html
 !reports/templates/*.html
+!docs/examples/bilingual/reports/**/*.csv
+!docs/examples/bilingual/reports/**/*.html
 
 # Temporary files
 *.log

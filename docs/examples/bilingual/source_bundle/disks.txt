@@ -1,0 +1,1 @@
+Drive=C:;FileSystem=NTFS;SizeBytes=107374182400;FreeBytes=5368709120;FreePercent=5

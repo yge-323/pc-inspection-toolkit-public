@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "bundle_id": "0b979937-3954-450b-ae00-734e6c571f15",
+  "project_alias": "synthetic-demo",
+  "asset_alias": "synthetic-windows-01",
+  "target": {
+    "os_family": "windows",
+    "product": "合成 Windows 演示环境",
+    "version": "synthetic-1",
+    "architecture": "x64",
+    "use_case": "offline bilingual report example",
+    "scope": "basic"
+  },
+  "collection": {
+    "started_at": "2026-10-20T00:00:00+00:00",
+    "finished_at": "2026-10-20T00:01:00+00:00",
+    "timezone": "UTC",
+    "privilege": "ordinary",
+    "collector_version": "synthetic-demo-1",
+    "command_catalog": "static-synthetic-fixture"
+  },
+  "items": [
+    {
+      "path": "accounts.txt",
+      "status": "collected",
+      "reason": "The collector returned partial facts; see its notes and do not treat missing fields as passing.",
+      "size_bytes": 108,
+      "sha256": "2ea5a80de483b5db473535cce7e1d5bc63aacc92ca7a28a6c16b6f9b5a33566a",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "cpu.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 64,
+      "sha256": "c5fb1f3d9e1997e6dd170ebe44be05285447bbe1ce17d7c9c590fc586cb03747",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "disks.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 84,
+      "sha256": "2e2916e33bce1c690385811655f2e220b0fbd55beb121644de8de4f2a46e00b4",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "firewall.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 40,
+      "sha256": "9cd79ab780908c159f78f689f9961338635166b4f782dd4ae5f0ce9a18ab8d67",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "graphics.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 31,
+      "sha256": "4cb8536dc8692000ea9049832969e11550f4dae9cc2366e24875e115583381d0",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "listeners.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 46,
+      "sha256": "4f63082a610f3f8bd601b905345cb15cd65fbb486efe34f8a0b96c1a6fce7a37",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "memory.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 32,
+      "sha256": "865424ee7e3fdce3998cb942b9f3df3c6c76d11e7a6098cdc60d9a93f54c91a3",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "os.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 80,
+      "sha256": "61e3182142616820fea6bc897a7f6f4cbe5a1c0fa0a70e7b2bbbec2713afa95f",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "os_detail.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 58,
+      "sha256": "099c8c45abb648911683656ec7a13cb8bc706d9708cbbe1569193bd1d01a01fb",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "privilege.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "processes.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 15,
+      "sha256": "7b2f291a5b1b99f61dcb9f06ba32f893c60466804a7e97dd6ed9f3f660137f83",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "security_status.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 228,
+      "sha256": "02e2681b37dd2e0105b5b0a0f5350ceab2c364ff1b2243a90adf007580b3621e",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "services.txt",
+      "status": "collected",
+      "reason": "",
+      "size_bytes": 128,
+      "sha256": "028552683a0e51ea675af6969f1b64825ec27ad65c0e968e6271077a32558b17",
+      "source": "native_collector",
+      "exit_code": 0
+    },
+    {
+      "path": "startup_items.txt",
+      "status": "collected",
+      "reason": "The collector returned partial facts; see its notes and do not treat missing fields as passing.",
+      "size_bytes": 75,
+      "sha256": "131f6d9656772b2baf22fbef5a18ae269c1743451441001b065fd5bdb588ca84",
+      "source": "native_collector",
+      "exit_code": 0
+    }
+  ]
+}

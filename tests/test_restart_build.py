@@ -25,6 +25,15 @@ class RestartBuildContractTests(unittest.TestCase):
         self.assertIn("desktop_launcher.py", build_restart.SOURCE_FILES)
         self.assertIn("desktop_app.py", build_restart.SOURCE_FILES)
         self.assertIn("desktop_ui.py", build_restart.SOURCE_FILES)
+        self.assertIn("i18n.py", build_restart.SOURCE_FILES)
+        self.assertIn("locales/__init__.py", build_restart.SOURCE_FILES)
+        self.assertIn("locales/findings.py", build_restart.SOURCE_FILES)
+        self.assertIn("locales/cli.py", build_restart.SOURCE_FILES)
+        self.assertIn("locales/listener_translations.py", build_restart.SOURCE_FILES)
+        self.assertIn("locales/rule_translations.py", build_restart.SOURCE_FILES)
+        self.assertIn("locales/desktop_errors.py", build_restart.SOURCE_FILES)
+        runner_source = Path(__file__).with_name("run_unit_tests.py").read_text(encoding="utf-8")
+        self.assertIn('"test_desktop_errors_i18n.py"', runner_source)
         self.assertIn("docs/PRODUCT.md", build_restart.SOURCE_FILES)
         self.assertNotIn("AGENTS.md", build_restart.SOURCE_FILES)
         self.assertIn("LICENSE", build_restart.SOURCE_FILES)
@@ -65,11 +74,17 @@ class RestartBuildContractTests(unittest.TestCase):
             portable = Path(temporary) / "portable"
             build_restart._copy_allowlist(build_restart.PROJECT_ROOT, portable)
             entry = portable / "source" / "inspection_cli.py"
-            for option, expected in (("--help", "usage:"), ("--version", "0.3.0-landable")):
-                result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(entry), option], cwd=temporary,
-                                        capture_output=True, text=True, encoding="utf-8", check=False)
+            scenarios = (
+                (["--help"], ("用法：", "--report-lang", "analyze")),
+                (["--lang", "en", "--help"], ("usage:", "--report-lang", "analyze")),
+                (["--version"], ("0.3.0-landable",)),
+            )
+            for arguments, expected_parts in scenarios:
+                result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(entry), *arguments], cwd=temporary,
+                                        capture_output=True, text=True, encoding="utf-8", errors="strict", check=False)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn(expected, result.stdout.lower() if option == "--help" else result.stdout)
+                for expected in expected_parts:
+                    self.assertIn(expected, result.stdout.lower() if expected == "usage:" else result.stdout)
 
     def test_fake_build_binds_allowlisted_bytes_and_marks_platform_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

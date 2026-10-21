@@ -7,6 +7,8 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
+from i18n import normalize_language
+
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 128 * 1024
 MAX_FINDINGS = 16
@@ -114,8 +116,9 @@ def _redact(text: str) -> str:
     return text
 
 
-def request_suggestions(*, provider: str, endpoint: str, model: str, findings: list[dict[str, Any]], cloud_disabled_acknowledged: bool = False, timeout: float = 15.0) -> dict[str, Any]:
+def request_suggestions(*, provider: str, endpoint: str, model: str, findings: list[dict[str, Any]], cloud_disabled_acknowledged: bool = False, timeout: float = 15.0, language: str | None = None) -> dict[str, Any]:
     """Request an isolated, non-authoritative advisory. Never mutates findings or status."""
+    locale = normalize_language(language)
     if provider != "ollama" or not model or len(model) > 128:
         raise LocalAIError("Provider/model selection is invalid.")
     if not cloud_disabled_acknowledged:
@@ -148,11 +151,18 @@ def request_suggestions(*, provider: str, endpoint: str, model: str, findings: l
         if summary["findings"] and not allowed_refs:
             raise LocalAIError("AI advisory requires stable IDs for every sent Finding.")
         schema = _suggestion_schema(allowed_refs)
-        example = ({"suggestions": [{"text": "请人工核对该发现适用条件和整改前提。", "evidence_refs": [allowed_refs[0]]}]}
+        example_text = ("Please manually verify applicability and remediation prerequisites."
+                        if locale == "en-US" else "请人工核对该发现适用条件和整改前提。")
+        example = ({"suggestions": [{"text": example_text, "evidence_refs": [allowed_refs[0]]}]}
                    if allowed_refs else {"suggestions": []})
-        prompt = ("请用简体中文提供可选、非权威的人工复核建议，指出适用版本、证据充分性或实施前提等应由人工核对的方向。只输出符合此 JSON Schema 的 JSON 对象："
+        instruction = (
+            "Respond in English with optional, non-authoritative review suggestions. Point out items for a person to verify, such as applicable versions, evidence sufficiency, and prerequisites. Output only a JSON object matching this JSON Schema: "
+            if locale == "en-US" else
+            "请用简体中文提供可选、非权威的人工复核建议，指出适用版本、证据充分性或实施前提等应由人工核对的方向。只输出符合此 JSON Schema 的 JSON 对象："
+        )
+        prompt = (instruction
                   + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
-                  + "。不得编造证据、命令、严重等级或风险状态。格式示例："
+                  + (" Do not invent evidence, commands, severity, or risk status. Example: " if locale == "en-US" else "。不得编造证据、命令、严重等级或风险状态。格式示例：")
                   + json.dumps(example, ensure_ascii=False, separators=(",", ":")))
         payload = {"model": model, "stream": False,
                    "messages": [{"role": "system", "content": prompt},
@@ -180,7 +190,8 @@ def request_suggestions(*, provider: str, endpoint: str, model: str, findings: l
         if not item["text"].strip() or (allowed_refs and not item["evidence_refs"]):
             raise LocalAIError("AI suggestion must contain text and cite a sent Finding.")
         safe_suggestions.append({"text": _redact(item["text"][:1000]), "evidence_refs": item["evidence_refs"]})
-    return {"status": "AI_ASSISTED_LOCALITY_UNVERIFIED", "label": "AI 辅助建议（非正式分析；推理本地性未独立认证；正式事实和风险等级以确定性规则及证据为准）",
+    label = "AI 辅助建议（非正式分析；推理本地性未独立认证；正式事实和风险等级以确定性规则及证据为准）"
+    return {"status": "AI_ASSISTED_LOCALITY_UNVERIFIED", "label": label,
             "provider": provider, "model": model, "endpoint_scope": "loopback" if loopback else "private_network",
             "inference_locality": "UNVERIFIED; Ollama endpoint reported a local model record, cloud-disabled state was user-asserted and server identity was not authenticated",
             "suggestions": safe_suggestions}

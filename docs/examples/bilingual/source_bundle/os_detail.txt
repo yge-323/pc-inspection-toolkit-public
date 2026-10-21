@@ -1,0 +1,2 @@
+Caption=合成 Windows 演示环境
+Version=synthetic-1

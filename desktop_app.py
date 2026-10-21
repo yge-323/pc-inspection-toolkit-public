@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from evidence.bundle import BundleError, _decode_text, _is_reparse, import_bundle, parse_iso8601_timestamp, stage_native_evidence, validate_bundle, write_manifest
+from i18n import load_language_preference, normalize_language, tr
 
 MAX_CHILD_SECONDS = 1860
 MAX_CHILD_OUTPUT = 128 * 1024
@@ -314,22 +315,53 @@ def _terminate_child_tree(process: subprocess.Popen[bytes]) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    startup_check = args == ["--startup-check"]
-    if args and not startup_check:
+    preference, preference_warning = load_language_preference()
+    requested_language = None
+    remaining: list[str] = []
+    index = 0
+    while index < len(args):
+        argument = args[index]
+        if argument == "--lang":
+            if index + 1 >= len(args) or requested_language is not None:
+                if sys.stderr is not None:
+                    print(tr("语言选项无效。", preference), file=sys.stderr)
+                return 2
+            requested_language = args[index + 1]
+            index += 2
+            continue
+        if argument.startswith("--lang="):
+            if requested_language is not None:
+                if sys.stderr is not None:
+                    print(tr("语言选项无效。", preference), file=sys.stderr)
+                return 2
+            requested_language = argument.split("=", 1)[1]
+            index += 1
+            continue
+        remaining.append(argument)
+        index += 1
+    try:
+        language = normalize_language(requested_language) if requested_language is not None else preference
+    except ValueError:
         if sys.stderr is not None:
-            print("Only the internal --startup-check option is accepted.", file=sys.stderr)
+            print(tr("不支持所选语言。", preference), file=sys.stderr)
+        return 2
+    startup_check = remaining == ["--startup-check"]
+    if remaining and not startup_check:
+        if sys.stderr is not None:
+            print(tr("Only the internal --startup-check option is accepted.", language), file=sys.stderr)
         return 2
     try:
         import tkinter as tk
     except ImportError:
         if sys.stderr is not None:
-            print("Tkinter is unavailable; use inspection_cli.py.", file=sys.stderr)
+            print(tr("Tkinter is unavailable; use inspection_cli.py.", language), file=sys.stderr)
         return 2
     from desktop_ui import InspectionDesktop
     root = tk.Tk()
     if startup_check:
         root.withdraw()
-    InspectionDesktop(root)
+    InspectionDesktop(root, language=language,
+                      preference_warning=None if requested_language is not None else preference_warning)
     if startup_check:
         root.update_idletasks()
         root.destroy()

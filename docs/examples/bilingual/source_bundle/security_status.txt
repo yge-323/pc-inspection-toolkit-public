@@ -1,0 +1,9 @@
+RdpDisabled=0
+RdpNlaRequired=0
+Smb1ExplicitValue=1
+AutoAdminLogonEnabled=1
+GuestEnabled=True
+MinimumPasswordLength=6
+PasswordComplexity=0
+LockoutBadCount=0
+FirewallProfile=PublicProfile;Enabled=0;DefaultInboundAction=0

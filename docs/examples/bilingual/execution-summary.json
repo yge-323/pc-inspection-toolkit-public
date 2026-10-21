@@ -1,0 +1,141 @@
+{
+  "case": "work/bilingual-report-demo/cases/0b979937-3954-450b-ae00-734e6c571f15",
+  "report_directories": {
+    "zh": "docs/examples/bilingual/reports/zh/0b979937-3954-450b-ae00-734e6c571f15",
+    "en": "docs/examples/bilingual/reports/en/0b979937-3954-450b-ae00-734e6c571f15"
+  },
+  "seal_exit_code": 0,
+  "import_exit_code": 0,
+  "exit_codes": {
+    "zh": 4,
+    "en": 4
+  },
+  "hashes": {
+    "source_manifest_sha256": "f4128b69b13e98dd30e5b06acb5a9deca2c02f86fcd9b8d5bdf6ada5e4389eb6",
+    "source_evidence_sha256": {
+      "accounts.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "accounts.txt": "2ea5a80de483b5db473535cce7e1d5bc63aacc92ca7a28a6c16b6f9b5a33566a",
+      "cpu.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "cpu.txt": "c5fb1f3d9e1997e6dd170ebe44be05285447bbe1ce17d7c9c590fc586cb03747",
+      "disks.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "disks.txt": "2e2916e33bce1c690385811655f2e220b0fbd55beb121644de8de4f2a46e00b4",
+      "firewall.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "firewall.txt": "9cd79ab780908c159f78f689f9961338635166b4f782dd4ae5f0ce9a18ab8d67",
+      "graphics.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "graphics.txt": "4cb8536dc8692000ea9049832969e11550f4dae9cc2366e24875e115583381d0",
+      "listeners.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "listeners.txt": "4f63082a610f3f8bd601b905345cb15cd65fbb486efe34f8a0b96c1a6fce7a37",
+      "memory.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "memory.txt": "865424ee7e3fdce3998cb942b9f3df3c6c76d11e7a6098cdc60d9a93f54c91a3",
+      "os.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "os.txt": "61e3182142616820fea6bc897a7f6f4cbe5a1c0fa0a70e7b2bbbec2713afa95f",
+      "os_detail.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "os_detail.txt": "099c8c45abb648911683656ec7a13cb8bc706d9708cbbe1569193bd1d01a01fb",
+      "privilege.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "privilege.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "processes.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "processes.txt": "7b2f291a5b1b99f61dcb9f06ba32f893c60466804a7e97dd6ed9f3f660137f83",
+      "security_status.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "security_status.txt": "02e2681b37dd2e0105b5b0a0f5350ceab2c364ff1b2243a90adf007580b3621e",
+      "services.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "services.txt": "028552683a0e51ea675af6969f1b64825ec27ad65c0e968e6271077a32558b17",
+      "startup_items.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "startup_items.txt": "131f6d9656772b2baf22fbef5a18ae269c1743451441001b065fd5bdb588ca84"
+    },
+    "source_evidence_hash_map_sha256": "6be8b1b094d1d9237b3b6ae7fc32aa4cef4f1ee16645e6abaefca4d66f5c2ab3",
+    "imported_manifest_sha256": "f4128b69b13e98dd30e5b06acb5a9deca2c02f86fcd9b8d5bdf6ada5e4389eb6",
+    "imported_evidence_sha256": {
+      "accounts.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "accounts.txt": "2ea5a80de483b5db473535cce7e1d5bc63aacc92ca7a28a6c16b6f9b5a33566a",
+      "cpu.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "cpu.txt": "c5fb1f3d9e1997e6dd170ebe44be05285447bbe1ce17d7c9c590fc586cb03747",
+      "disks.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "disks.txt": "2e2916e33bce1c690385811655f2e220b0fbd55beb121644de8de4f2a46e00b4",
+      "firewall.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "firewall.txt": "9cd79ab780908c159f78f689f9961338635166b4f782dd4ae5f0ce9a18ab8d67",
+      "graphics.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "graphics.txt": "4cb8536dc8692000ea9049832969e11550f4dae9cc2366e24875e115583381d0",
+      "listeners.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "listeners.txt": "4f63082a610f3f8bd601b905345cb15cd65fbb486efe34f8a0b96c1a6fce7a37",
+      "memory.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "memory.txt": "865424ee7e3fdce3998cb942b9f3df3c6c76d11e7a6098cdc60d9a93f54c91a3",
+      "os.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "os.txt": "61e3182142616820fea6bc897a7f6f4cbe5a1c0fa0a70e7b2bbbec2713afa95f",
+      "os_detail.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "os_detail.txt": "099c8c45abb648911683656ec7a13cb8bc706d9708cbbe1569193bd1d01a01fb",
+      "privilege.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "privilege.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "processes.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "processes.txt": "7b2f291a5b1b99f61dcb9f06ba32f893c60466804a7e97dd6ed9f3f660137f83",
+      "security_status.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "security_status.txt": "02e2681b37dd2e0105b5b0a0f5350ceab2c364ff1b2243a90adf007580b3621e",
+      "services.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "services.txt": "028552683a0e51ea675af6969f1b64825ec27ad65c0e968e6271077a32558b17",
+      "startup_items.exit-code.txt": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "startup_items.txt": "131f6d9656772b2baf22fbef5a18ae269c1743451441001b065fd5bdb588ca84"
+    },
+    "analysis_json_sha256": "dd0a7eaba5d8401b84f658bd97201bfc938c8a3f3ed813984902221c9c2f4a0c"
+  },
+  "status": "PARTIAL",
+  "finding_count": 11,
+  "finding_keys": [
+    [
+      "OS_LIFECYCLE_COVERAGE_GAP",
+      "Warning",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_ACCOUNT_LOCKOUT_DISABLED",
+      "Warning",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_AUTOLOGON_ENABLED",
+      "Attention",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_FIREWALL_PROFILE_DISABLED",
+      "Attention",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_GUEST_ENABLED",
+      "Warning",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_PASSWORD_COMPLEXITY_DISABLED",
+      "Warning",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_PASSWORD_MINIMUM_LENGTH_LOW",
+      "Warning",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_RDP_NLA_DISABLED",
+      "Attention",
+      "PARTIAL"
+    ],
+    [
+      "WIN_BASELINE_SMB1_ENABLED",
+      "Attention",
+      "PARTIAL"
+    ],
+    [
+      "WIN_DISK_LOW_SPACE:C:",
+      "Warning",
+      "PARTIAL"
+    ],
+    [
+      "WIN_SERVICE_SUSPICIOUS_PATH",
+      "Attention",
+      "PARTIAL"
+    ]
+  ],
+  "raw_chinese_fact": "合成样例处理器：仅用于双语报告保真验证",
+  "inputs_unchanged": true,
+  "analysis_json_identical": true
+}

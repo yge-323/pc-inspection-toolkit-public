@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -20,6 +21,45 @@ from evidence.bundle import BundleError, import_bundle, stage_native_evidence, v
 
 
 class DesktopAppContracts(unittest.TestCase):
+    def _destroy_test_root(self, root, tk) -> None:
+        try:
+            for callback_id in root.tk.splitlist(root.tk.call("after", "info")):
+                root.after_cancel(callback_id)
+        except tk.TclError:
+            pass
+        root.destroy()
+
+    def _pump_tk_for(self, root, duration_seconds: float) -> None:
+        deadline = time.monotonic() + duration_seconds
+        while time.monotonic() < deadline:
+            root.update()
+            time.sleep(0.01)
+        root.update_idletasks()
+
+    def _wait_for_localized_reflow_stable(self, root, app, timeout_seconds: float = 3.0) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        stable_since = None
+        stable_size = None
+        while time.monotonic() < deadline:
+            root.update()
+            current_size = (root.winfo_width(), root.winfo_height())
+            settled = app._localized_reflow_after is None and not app._localized_reflow_pending
+            if settled and current_size == stable_size:
+                if stable_since is None:
+                    stable_since = time.monotonic()
+                elif time.monotonic() - stable_since >= 0.25:
+                    return
+            else:
+                stable_since = None
+                stable_size = current_size
+            time.sleep(0.01)
+        self.fail(
+            "localized layout did not settle: "
+            f"size={root.winfo_width()}x{root.winfo_height()}, "
+            f"reflow_after={app._localized_reflow_after!r}, "
+            f"reflow_pending={app._localized_reflow_pending}"
+        )
+
     def _windows_raw(self, root: Path) -> Path:
         root.mkdir()
         (root / "collection_metadata.txt").write_text(
@@ -469,7 +509,7 @@ class DesktopAppContracts(unittest.TestCase):
 
                 root.geometry("1240x840")
                 app._navigate("import")
-                root.update()
+                self._wait_for_localized_reflow_stable(root, app)
                 import_page = app.pages["import"]
                 import_content = import_page["content"]
                 import_pair = next(child for child in import_content.winfo_children()
@@ -487,9 +527,14 @@ class DesktopAppContracts(unittest.TestCase):
                     self.assertEqual(str(label.cget("anchor")), "w")
                     self.assertEqual(str(label.cget("justify")), "left")
                     self.assertEqual(bullet_grid["pady"], label_grid["pady"])
-                self.assertEqual(
-                    int(rule_widgets[1].cget("wraplength")),
-                    max(160, rules_frame.winfo_width() - 32),
+                self.assertIsNone(app._localized_reflow_after)
+                self.assertFalse(app._localized_reflow_pending)
+                available_rule_width = rule_widgets[1].winfo_width() - app._label_horizontal_insets(
+                    rule_widgets[1], app.ttk.Style(root))
+                self.assertGreaterEqual(int(rule_widgets[1].cget("wraplength")), 80)
+                self.assertLessEqual(
+                    int(rule_widgets[1].cget("wraplength")), available_rule_width,
+                    msg=f"label wrap exceeds allocated inner width ({available_rule_width}px)",
                 )
                 long_rule = rule_widgets[-1]
                 original_rule = long_rule.cget("text")
@@ -527,6 +572,187 @@ class DesktopAppContracts(unittest.TestCase):
                 self.assertLessEqual(import_button.winfo_rooty() + import_button.winfo_height(), canvas_bottom)
             root.update_idletasks()
         finally:
-            root.destroy()
+            self._destroy_test_root(root, tk)
+
+    @unittest.skipUnless(os.name == "nt" or os.environ.get("DISPLAY"), "requires a Tk display")
+    def test_language_switch_preserves_form_authorization_and_finding_selection(self) -> None:
+        import tkinter as tk
+        from desktop_ui import InspectionDesktop
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk display unavailable: {exc}")
+        try:
+            with mock.patch("desktop_ui.save_language_preference"):
+                app = InspectionDesktop(root)
+                root.update()
+                self.assertEqual(app.report_language_var.get(), "auto")
+                app.busy = True
+                app._worker_status_kind = "busy"
+                app._worker_activity_source = "正在校验证据并进行规则分析"
+                app._worker_label_source = "证据导入与分析"
+                app._refresh_worker_status("en-US")
+                self.assertIn("interface remains responsive", app.status_var.get())
+                self.assertTrue(app.busy)
+                self.assertEqual(app._worker_activity_source, "正在校验证据并进行规则分析")
+                app._apply_language("zh-CN")
+                self.assertIn("界面可继续响应", app.status_var.get())
+                self.assertTrue(app.busy)
+                app.busy = False
+                app._worker_status_kind = "done"
+                app._worker_activity_source = None
+                app._worker_label_source = "证据导入与分析"
+                app._apply_language("en-US")
+                self.assertIn("Evidence import and analysis finished.", app.status_var.get())
+                self.assertIn("PARTIAL / FAILED do not mean a pass.", app.status_var.get())
+                app._apply_language("zh-CN")
+                self.assertIn("证据导入与分析 已结束。", app.status_var.get())
+                self.assertIn("PARTIAL / FAILED 不表示检查通过。", app.status_var.get())
+                app._apply_language("en-US")
+                root.update()
+                auto_command = app._cli_command(["analyze", "SYNTHETIC"], language="en-US")
+                self.assertEqual(auto_command[auto_command.index("--lang") + 1], "en-US")
+                self.assertEqual(auto_command[auto_command.index("--report-lang") + 1], "en-US")
+                app.report_language_var.set("zh-CN")
+                app._apply_language("zh-CN")
+                override_command = app._cli_command(["analyze", "SYNTHETIC"], language="zh-CN")
+                self.assertEqual(override_command[override_command.index("--lang") + 1], "zh-CN")
+                self.assertEqual(override_command[override_command.index("--report-lang") + 1], "zh-CN")
+                app._apply_language("en-US")
+                self.assertEqual(app.report_language_var.get(), "zh-CN")
+                app.report_language_var.set("auto")
+                import re
+                cjk = re.compile(r"[\u3400-\u9fff]")
+                visible_strings = []
+                def collect_text(parent):
+                    for child in parent.winfo_children():
+                        if isinstance(child, (app.ttk.Label, app.ttk.Button, app.ttk.Checkbutton,
+                                              app.ttk.Radiobutton, tk.Label, tk.Button,
+                                              tk.Checkbutton, tk.Radiobutton)):
+                            visible_strings.append(str(child.cget("text")))
+                        if isinstance(child, app.ttk.Treeview):
+                            visible_strings.extend(str(child.heading(column, "text"))
+                                                   for column in child.cget("columns"))
+                        collect_text(child)
+                collect_text(root)
+                unexpected = [text for text in visible_strings
+                              if cjk.search(text) and text != "简体中文"]
+                self.assertEqual([ascii(text) for text in unexpected], [])
+                app.cancel_event.clear()
+                app.events.put(("error", ("Synthetic action", "ValueError: synthetic diagnostic")))
+                logged = []
+                with mock.patch.object(app, "_append", side_effect=logged.append), \
+                        mock.patch.object(app, "_finish_worker"), mock.patch.object(root, "after"):
+                    app._poll()
+                self.assertIn("Original diagnostic: ValueError: synthetic diagnostic", "".join(logged))
+                self.assertIn("Operation did not complete", "".join(logged))
+                app._apply_language("zh-CN")
+                root.update()
+                app._show_analysis({
+                    "analysis_path": Path("SYNTHETIC/analysis.json"),
+                    "report_dir": Path("SYNTHETIC/reports"),
+                    "analysis": {"status": "PARTIAL", "findings": [{
+                        "finding_id": "SYNTHETIC-COUNT", "severity": "Warning",
+                        "title": "Synthetic finding", "description": "Synthetic description",
+                        "evidence": {"fixture": "synthetic"},
+                    }], "warnings": ["SYNTHETIC_GAP"], "errors": []},
+                    "metadata": {"asset_alias": "SYNTHETIC-ASSET"},
+                })
+                root.update()
+                self.assertEqual(app.workflow_vars[2][2].get(), "PARTIAL · 1 条")
+                app._apply_language("en-US")
+                root.update()
+                self.assertEqual(app.workflow_vars[2][2].get(), "PARTIAL · 1 findings")
+                app._apply_language("zh-CN")
+                root.update()
+                self.assertEqual(app.workflow_vars[2][2].get(), "PARTIAL · 1 条")
+                app.project_var.set("SYNTHETIC-PROJECT")
+                app.asset_var.set("SYNTHETIC-ASSET")
+                app.use_case_var.set("办公电脑")
+                app.local_consent_var.set(True)
+                app.analysis_value = {"findings": [
+                    {"finding_id": "WIN_PORT_22_REVIEW", "rule_id": "WIN_PORT_22_REVIEW",
+                     "severity": "Warning", "title": "SSH 常用端口外部监听审查",
+                     "description": "配置的 SSH 检查端口正在 0.0.0.0 或 :: 上监听。此项只检查监听状态，不验证进程是否为 sshd，也不判断该访问是否符合预期。",
+                     "evidence": {"fixture": "synthetic"}, "needs_human_review": True},
+                    {"finding_id": "SYNTHETIC-SECOND", "rule_id": "SYNTHETIC-SECOND",
+                     "severity": "Info", "title": "Synthetic second finding",
+                     "description": "Synthetic external rule text", "evidence": {"fixture": "second"},
+                     "needs_human_review": True},
+                ]}
+                source_snapshot = json.dumps(app.analysis_value, ensure_ascii=False, sort_keys=True)
+                app._render_findings()
+                root.update()
+                items = app.finding_tree.get_children()
+                self.assertEqual(len(items), 2)
+                app.finding_tree.selection_set(items[1])
+                app._on_finding_selected(None)
+                selected_before = app._finding_by_iid[app.finding_tree.selection()[0]]["finding_id"]
+
+                for language in ("en-US", "zh-CN", "en-US"):
+                    app._apply_language(language)
+                    root.update()
+                    from tkinter.font import Font
+                    from locales.findings import severity_display
+                    severity_font = Font(root=root, font=app.ttk.Style(root).lookup("Treeview", "font") or
+                                         "TkDefaultFont")
+                    localized_severities = [severity_display(value, language) for value in (
+                        "Critical", "Attention", "Warning", "Need Admin", "Info", "OK", "Skipped", "Failed")]
+                    self.assertGreaterEqual(
+                        int(app.finding_tree.column("severity", "width")),
+                        max(severity_font.measure(label) + 20 for label in localized_severities),
+                    )
+                    selected = app.finding_tree.selection()
+                    self.assertTrue(selected)
+                    self.assertEqual(app._finding_by_iid[selected[0]]["finding_id"], selected_before)
+                    self.assertEqual(app._selected_use_case_token(), "office_pc")
+                    self.assertEqual(app.project_var.get(), "SYNTHETIC-PROJECT")
+                    self.assertEqual(app.asset_var.get(), "SYNTHETIC-ASSET")
+                    self.assertTrue(app.local_consent_var.get())
+                    self.assertEqual(json.dumps(app.analysis_value, ensure_ascii=False, sort_keys=True), source_snapshot)
+
+                self.assertEqual(str(app.finding_tree.heading("title", "text")), "Check / Finding")
+                self.assertIn("Rule text retained in its source language",
+                              app.finding_detail.get("1.0", "end"))
+                visible_widgets = []
+                def collect(parent):
+                    for child in parent.winfo_children():
+                        visible_widgets.append(child)
+                        collect(child)
+                collect(root)
+                self.assertTrue(any(str(widget.cget("text")) == "Interface language"
+                                    for widget in visible_widgets
+                                    if isinstance(widget, (app.ttk.Label, tk.Label))))
+                self.assertTrue(any(str(widget.cget("text")) == "Open inspection  ›"
+                                    for widget in visible_widgets
+                                    if isinstance(widget, app.ttk.Button)))
+                local_action = next(widget for widget in visible_widgets
+                                    if isinstance(widget, app.ttk.Button)
+                                    and str(widget.cget("text")) == "Start local inspection")
+                root.update_idletasks()
+                from tkinter.font import Font
+                button_font = Font(root=root, font=app.ttk.Style(root).lookup("Primary.TButton", "font"))
+                self.assertLessEqual(button_font.measure(local_action.cget("text")), local_action.winfo_width())
+                selected = app.finding_tree.selection()[0]
+                before_token_command = app._selected_use_case_token()
+                app._apply_language("en-US")
+                self.assertEqual(app._selected_use_case_token(), before_token_command)
+                app.language_var.set("简体中文")
+                import i18n
+                missing_translation = i18n._ZH_EN.pop("概览")
+                try:
+                    with mock.patch.object(app, "_message") as show_error, \
+                        mock.patch("desktop_ui.save_language_preference") as save_preference:
+                        app._select_language()
+                    self.assertEqual(app.language, "en-US")
+                    self.assertEqual(app.language_var.get(), "English")
+                    save_preference.assert_not_called()
+                    show_error.assert_called_once()
+                finally:
+                    i18n._ZH_EN["概览"] = missing_translation
+                root.update_idletasks()
+        finally:
+            self._destroy_test_root(root, tk)
 if __name__ == "__main__":
     unittest.main()

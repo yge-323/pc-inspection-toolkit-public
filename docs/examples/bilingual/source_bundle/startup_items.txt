@@ -1,0 +1,2 @@
+COLLECTOR_STATUS=PARTIAL
+SyntheticFact=合成样例：无启动项明细

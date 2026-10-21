@@ -28,6 +28,8 @@ from collectors import (
     windows_security,
 )
 from collectors.common import base_result, utc_now
+from i18n import normalize_language
+from locales.cli import argument_parser_class, cli_text
 from models.analysis import AnalysisResult
 from reports.markdown_report import render_report
 from rules.loader import RuleResolution, resolve_rule_configuration
@@ -54,6 +56,21 @@ COLLECTORS = [
 
 Collector = Callable[[], dict[str, Any]]
 Analyzer = Callable[..., AnalysisResult | list[dict[str, Any]]]
+
+
+def _language_from_argv(argv: list[str], default: str) -> str:
+    for index, item in enumerate(argv):
+        if item in {"--lang", "--language"} and index + 1 < len(argv):
+            try:
+                return normalize_language(argv[index + 1])
+            except ValueError:
+                return default
+        if item.startswith("--lang=") or item.startswith("--language="):
+            try:
+                return normalize_language(item.split("=", 1)[1])
+            except ValueError:
+                return default
+    return default
 
 
 def application_root() -> Path:
@@ -227,12 +244,26 @@ def _collector_name(collect: Collector) -> str:
     return str(getattr(collect, "__name__", "collector"))
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Local Windows inspection MVP")
-    parser.add_argument("--version", action="version", version=VERSION)
-    parser.add_argument("--output-dir", default="reports/output", help="Report output directory")
-    parser.add_argument("--raw-dir", default="data/raw", help="Raw normalized data directory")
-    args = parser.parse_args()
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    display_language = _language_from_argv(argv, "zh-CN")
+    parser_type = argument_parser_class(display_language)
+    parser = parser_type(description=cli_text("Windows local inspection tool", display_language), language=display_language)
+    parser.add_argument("--version", action="version", version=VERSION,
+                        help=cli_text("Show program version and exit", display_language))
+    parser.add_argument("--output-dir", default="reports/output", help=cli_text("Report output directory", display_language))
+    parser.add_argument("--raw-dir", default="data/raw", help=cli_text("Raw normalized data directory", display_language))
+    parser.add_argument("--lang", "--language", dest="language", type=normalize_language,
+                        default="zh-CN", metavar="zh-CN|en-US|zh|en",
+                        help=cli_text("Select the report and human message language", display_language))
+    report_lang_help = ("Select the report language; defaults to --lang" if display_language == "en-US"
+                        else "选择报告语言；默认沿用 --lang")
+    parser.add_argument("--report-lang", "--report-language", dest="report_language",
+                        type=normalize_language, default=None, metavar="zh-CN|en-US|zh|en",
+                        help=report_lang_help)
+    args = parser.parse_args(argv)
+    language = normalize_language(args.language)
+    report_language = normalize_language(args.report_language or language)
 
     root = application_root()
     resolution = resolve_rule_configuration(root)
@@ -274,13 +305,16 @@ def main() -> int:
         analysis_result,
         report_path,
         raw_dir,
+        language=report_language,
     )
 
     elapsed = perf_counter() - t0
     logging.info("report=%s raw=%s elapsed=%.2fs version=%s", report_path, raw_json, elapsed, VERSION)
-    print(f"Report: {report_path}")
-    print(f"Raw data: {raw_json}")
-    print(f"Execution log: {log_path}")
+    print(f"{cli_text('Report', language)}: {report_path}")
+    print(f"{cli_text('Raw data', language)}: {raw_json}")
+    print(f"{cli_text('Execution log', language)}: {log_path}")
+    if analysis_result.status != "OK":
+        print(cli_text("The analysis is incomplete; review its evidence gaps.", language))
     return analysis_exit_code(analysis_result)
 
 
