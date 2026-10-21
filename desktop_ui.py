@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import re
@@ -17,6 +18,13 @@ from desktop_app import (
     _is_reparse, _read_process_output, application_root, cli_command, derive_native_metadata,
 )
 from evidence.bundle import BundleError, import_bundle, stage_native_evidence, write_manifest
+from i18n import (
+    LanguagePreferenceError, LocaleResourceError, normalize_language, save_language_preference,
+    severity_explanation, tr, validate_ui_resources,
+)
+from locales import display_finding, display_reason
+from locales.desktop_errors import display_desktop_error
+from locales.findings import gap_text, severity_display
 
 
 COLORS = {
@@ -50,29 +58,44 @@ NAV_ITEMS = (
 class InspectionDesktop:
     """Responsive Tk desktop UI backed by the existing CLI and evidence contracts."""
 
-    def __init__(self, root: Any) -> None:
+    def __init__(self, root: Any, *, language: str = "zh-CN",
+                 preference_warning: str | None = None) -> None:
         import tkinter as tk
         from tkinter import ttk
 
         self.tk, self.ttk, self.root = tk, ttk, root
+        self.language = normalize_language(language)
+        self.preference_warning = preference_warning
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.cancel_event = threading.Event()
         self.busy = False
+        self._worker_status_kind: str | None = None
+        self._worker_activity_source: str | None = None
+        self._worker_label_source: str | None = None
         self.last_analysis: Path | None = None
         self.last_report_dir: Path | None = None
         self.analysis_value: dict[str, Any] | None = None
         self.analysis_metadata: dict[str, Any] = {}
+        self._analysis_record_parts: tuple[str, str, str] | None = None
         self.log_widgets: list[Any] = []
         self.progress_bars: list[Any] = []
         self.pages: dict[str, dict[str, Any]] = {}
         self.nav_buttons: dict[str, Any] = {}
         self._responsive_pairs: list[dict[str, Any]] = []
+        self._localized_reflow_pending = False
+        self._localized_reflow_width: int | None = None
+        self._localized_reflow_after: str | None = None
+        self._localized_reflow_containers: set[Any] = set()
+        self._localized_reflow_widths: dict[Any, int] = {}
         app_root = application_root()
         self.cases_var = tk.StringVar(value=str(app_root / "data" / "raw" / "cases"))
         self.reports_var = tk.StringVar(value=str(app_root / "reports" / "output"))
         self.project_var = tk.StringVar()
         self.asset_var = tk.StringVar()
         self.use_case_var = tk.StringVar(value="未知/其他")
+        self.language_var = tk.StringVar(value="简体中文" if self.language == "zh-CN" else "English")
+        self.report_language_var = tk.StringVar(value="auto")
+        self.report_language_display_var = tk.StringVar()
         self.local_consent_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="bundle")
         self.bundle_var = tk.StringVar()
@@ -83,7 +106,7 @@ class InspectionDesktop:
         self.ai_timeout_var = tk.StringVar(value="180")
         self.status_var = tk.StringVar(value="就绪。未检查不代表安全；工具不会自动提权或修改目标配置。")
         self.activity_var = tk.StringVar(value="未开始")
-        self.analysis_status_var = tk.StringVar(value="未加载")
+        self.analysis_status_var = tk.StringVar(value=tr("未加载", self.language))
         self.analysis_record_var = tk.StringVar(value="请选择已有 analysis.json，或完成一次分析。")
         self.finding_count_var = tk.StringVar(value="—")
         self.gap_count_var = tk.StringVar(value="—")
@@ -222,15 +245,29 @@ class InspectionDesktop:
         self.root.rowconfigure(2, weight=0)
 
         topbar = ttk.Frame(self.root, style="Topbar.TFrame", padding=(20, 10))
+        self.topbar_frame = topbar
         topbar.grid(row=0, column=0, sticky="ew")
         topbar.columnconfigure(4, weight=1)
         mark = tk.Label(topbar, text="P", width=2, background=COLORS["blue"], foreground=COLORS["white"],
                         font=(self.font_family, 11, "bold"), padx=4, pady=3)
         mark.grid(row=0, column=0, sticky="w")
-        ttk.Label(topbar, text="PC Inspection Toolkit", style="Brand.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 14))
+        brand_label = ttk.Label(topbar, text="PC Inspection Toolkit", style="Brand.TLabel")
+        brand_label._i18n_keep_natural_width = True
+        brand_label.grid(row=0, column=1, sticky="w", padx=(10, 14))
         ttk.Separator(topbar, orient="vertical").grid(row=0, column=2, sticky="ns", padx=(0, 12))
-        ttk.Label(topbar, text="现场巡检与证据分析", style="CardMuted.TLabel").grid(row=0, column=3, sticky="w")
-        ttk.Label(topbar, text="Windows 桌面工具", style="CardMuted.TLabel").grid(row=0, column=4, sticky="e", padx=(16, 0))
+        tagline = ttk.Label(topbar, text="现场巡检与证据分析", style="CardMuted.TLabel")
+        tagline._i18n_keep_natural_width = True
+        tagline.grid(row=0, column=3, sticky="w")
+        desktop_label = ttk.Label(topbar, text="Windows 桌面工具", style="CardMuted.TLabel")
+        desktop_label._i18n_keep_natural_width = True
+        desktop_label.grid(row=0, column=4, sticky="e", padx=(16, 0))
+        ttk.Label(topbar, text="界面语言", style="CardMuted.TLabel").grid(row=0, column=5, sticky="e", padx=(12, 6))
+        self.language_combo = ttk.Combobox(
+            topbar, textvariable=self.language_var, values=("简体中文", "English"),
+            state="readonly", width=11,
+        )
+        self.language_combo.grid(row=0, column=6, sticky="e")
+        self.language_combo.bind("<<ComboboxSelected>>", self._select_language)
 
         body = ttk.Frame(self.root, style="Workspace.TFrame")
         body.grid(row=1, column=0, sticky="nsew")
@@ -279,6 +316,338 @@ class InspectionDesktop:
         self._build_review()
         self._register_page_wheel_bindings()
         self._navigate("overview")
+        self._apply_language(self.language)
+        self.root.bind("<Configure>", self._schedule_localized_reflow, add="+")
+        if self.preference_warning:
+            self.status_var.set(tr("偏好设置读取失败，已使用简体中文。", self.language))
+
+    def _select_language(self, _event: Any = None) -> None:
+        selected = self.language_var.get()
+        target = "en-US" if selected == "English" else "zh-CN" if selected == "简体中文" else None
+        if target is None:
+            self.language_var.set("简体中文" if self.language == "zh-CN" else "English")
+            return
+        if target == self.language:
+            return
+        previous = self.language
+        try:
+            validate_ui_resources(target)
+        except LocaleResourceError as exc:
+            self.language_var.set("简体中文" if previous == "zh-CN" else "English")
+            self._message(f"{tr('语言资源缺失或无效；已保留此前语言。', previous)}\n{exc}")
+            return
+        try:
+            save_language_preference(target)
+        except (LanguagePreferenceError, OSError) as exc:
+            self.language_var.set("简体中文" if previous == "zh-CN" else "English")
+            self._message(tr("语言偏好保存失败；已恢复此前语言。", previous))
+            return
+        self._apply_language(target)
+
+    def _apply_language(self, language: str) -> None:
+        """Update existing controls in place; do not rebuild pages or discard state."""
+        target = normalize_language(language)
+        validate_ui_resources(target)
+        case_token = self._selected_use_case_token()
+        self.language = target
+        self.language_var.set("简体中文" if target == "zh-CN" else "English")
+        self.root.title("PC Inspection Toolkit · " + tr("现场巡检与证据分析", target))
+
+        def visit(parent: Any) -> None:
+            try:
+                children = parent.winfo_children()
+            except Exception:
+                return
+            for widget in children:
+                if widget is not self.language_combo:
+                    try:
+                        source = getattr(widget, "_i18n_source_text", None)
+                        if source is None:
+                            source = widget.cget("text")
+                            widget._i18n_source_text = source
+                        if source:
+                            localized = tr(str(source), target)
+                            if localized != widget.cget("text"):
+                                widget.configure(text=localized)
+                    except Exception:
+                        pass
+                    if isinstance(widget, self.ttk.Combobox):
+                        values = tuple(widget.cget("values"))
+                        known_case_values = set(USE_CASES)
+                        known_case_values.update(self._use_case_label(
+                            token, locale) for token in
+                            ("home_pc", "office_pc", "office_server", "unknown")
+                            for locale in ("zh-CN", "en-US"))
+                        if values and all(value in known_case_values for value in values):
+                            widget.configure(values=self._local_use_case_options())
+                visit(widget)
+
+        visit(self.root)
+        for key, icon, title in NAV_ITEMS:
+            button = self.nav_buttons.get(key)
+            if button:
+                source = f"  {icon}    {title}"
+                button._i18n_source_text = source
+                button.configure(text=f"  {icon}    {tr(title, target)}")
+        if case_token:
+            self.use_case_var.set(self._use_case_label(case_token, target))
+        self._refresh_language_variables(target)
+        if hasattr(self, "report_language_combo"):
+            self.report_language_combo.configure(values=self._report_language_options(target))
+            self.report_language_display_var.set(self._report_language_label(
+                self.report_language_var.get(), target))
+        if hasattr(self, "source_browse_button"):
+            self._update_source_controls()
+        if hasattr(self, "ai_state_badge"):
+            self._update_ai_badge()
+        if hasattr(self, "finding_tree"):
+            for column, source in (
+                ("severity", "级别"),
+                ("title", "检查项目 / Finding"),
+                ("evidence", "证据摘要"),
+            ):
+                self.finding_tree.heading(column, text=tr(source, target))
+            self._render_findings()
+            self._render_gap_text()
+            self._render_ai_advisory()
+        for page in self.pages.values():
+            try:
+                page["canvas"].after_idle(lambda target=page: self._update_page_scrollbar(target))
+            except Exception:
+                pass
+        self._schedule_localized_reflow()
+
+    def _schedule_localized_reflow(self, _event: Any = None) -> None:
+        if _event is not None:
+            widget = getattr(_event, "widget", None)
+            if widget is self.root:
+                key = self.root
+            elif widget in self._localized_reflow_containers:
+                key = widget
+            else:
+                return
+            width = int(getattr(_event, "width", 0))
+            if self._localized_reflow_widths.get(key) == width:
+                return
+            self._localized_reflow_widths[key] = width
+            if self._localized_reflow_after is None:
+                try:
+                    self._localized_reflow_after = self.root.after(180, self._run_debounced_localized_reflow)
+                except self.tk.TclError:
+                    self._localized_reflow_after = None
+            return
+        if self._localized_reflow_pending:
+            return
+        self._localized_reflow_pending = True
+        try:
+            self.root.after_idle(self._reflow_localized_widgets)
+        except self.tk.TclError:
+            self._localized_reflow_pending = False
+
+    def _run_debounced_localized_reflow(self) -> None:
+        self._localized_reflow_after = None
+        self._schedule_localized_reflow()
+
+    def _label_horizontal_insets(self, widget: Any, style: Any) -> int:
+        """Return the label's actual horizontal padding and border in pixels."""
+        if isinstance(widget, self.ttk.Label):
+            style_name = str(widget.cget("style") or "TLabel")
+            raw_padding = style.lookup(style_name, "padding")
+            try:
+                parts = tuple(self.root.winfo_pixels(value)
+                              for value in self.root.tk.splitlist(raw_padding or ""))
+            except Exception:
+                parts = ()
+            if len(parts) == 1:
+                horizontal_padding = parts[0] * 2
+            elif len(parts) == 2:
+                horizontal_padding = parts[0] * 2
+            elif len(parts) >= 4:
+                horizontal_padding = parts[0] + parts[2]
+            else:
+                horizontal_padding = 0
+            try:
+                border = self.root.winfo_pixels(style.lookup(style_name, "borderwidth") or "0") * 2
+            except Exception:
+                border = 0
+            return horizontal_padding + border
+        try:
+            padding = self.root.winfo_pixels(widget.cget("padx") or "0") * 2
+            border = self.root.winfo_pixels(widget.cget("borderwidth") or "0") * 2
+            return padding + border
+        except Exception:
+            return 0
+
+    def _reflow_localized_widgets(self) -> None:
+        """Fit translated controls and wrap long labels to their current columns."""
+        import tkinter.font as tkfont
+
+        self._localized_reflow_pending = False
+        try:
+            self._localized_reflow_width = int(self.root.winfo_width())
+        except Exception:
+            pass
+        style = self.ttk.Style(self.root)
+
+        def visit(parent: Any) -> None:
+            try:
+                children = parent.winfo_children()
+            except Exception:
+                return
+            for widget in children:
+                try:
+                    if isinstance(widget, self.ttk.Button) and widget is not self.language_combo:
+                        label = str(widget.cget("text"))
+                        minimum = int(getattr(widget, "_i18n_min_width", widget.cget("width") or 1))
+                        button_style = widget.cget("style") or "TButton"
+                        font_spec = style.lookup(button_style, "font") or "TkDefaultFont"
+                        font = tkfont.Font(root=self.root, font=font_spec)
+                        average = max(1, font.measure("0"))
+                        needed = math.ceil((font.measure(label) + 32) / average)
+                        widget.configure(width=max(minimum, needed))
+                    elif (isinstance(widget, (self.ttk.Label, self.tk.Label))
+                          and not getattr(widget, "_i18n_keep_natural_width", False)):
+                        text = str(widget.cget("text") or "")
+                        if not text:
+                            variable_name = str(widget.cget("textvariable") or "")
+                            if variable_name:
+                                try:
+                                    text = str(self.root.getvar(variable_name))
+                                except Exception:
+                                    text = ""
+                        allocated_width = int(widget.winfo_width())
+                        allocated_width -= self._label_horizontal_insets(widget, style)
+                        available = allocated_width if allocated_width > 80 else 0
+                        if text and available > 80:
+                            font_spec = widget.cget("font") or style.lookup(widget.cget("style") or "TLabel", "font") or "TkDefaultFont"
+                            font = tkfont.Font(root=self.root, font=font_spec)
+                            current_width = int(widget.cget("wraplength") or 0)
+                            available = max(80, available)
+                            base_width = getattr(widget, "_i18n_base_wraplength", None)
+                            if base_width is None:
+                                base_width = current_width
+                                widget._i18n_base_wraplength = base_width
+                            target_width = min(int(base_width) or available, available)
+                            applied_width = getattr(widget, "_i18n_applied_wraplength", None)
+                            if applied_width != target_width:
+                                try:
+                                    widget.configure(wraplength=target_width, justify="left")
+                                    widget._i18n_applied_wraplength = target_width
+                                    manager = widget.winfo_manager()
+                                    if manager == "grid":
+                                        info = widget.grid_info()
+                                        sticky = str(info.get("sticky", "w"))
+                                        if "e" not in sticky:
+                                            widget.grid_configure(sticky=sticky + "e")
+                                    elif manager == "pack":
+                                        widget.pack_configure(fill="x")
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
+                visit(widget)
+
+        visit(self.root)
+
+    def _refresh_language_variables(self, language: str) -> None:
+        for variable in (
+            self.status_var, self.activity_var, self.compare_result_var, self.analysis_status_var,
+            self.report_path_var, self.analysis_record_var,
+            *(item[2] for item in getattr(self, "workflow_vars", [])),
+        ):
+            current = variable.get()
+            match = re.fullmatch(r"(OK|PARTIAL|FAILED) · (\d+) (?:条|findings)", current)
+            if match:
+                unit = "findings" if language == "en-US" else "条"
+                variable.set(f"{match.group(1)} · {match.group(2)} {unit}")
+            else:
+                variable.set(tr(current, language))
+        if self._worker_status_kind in ("busy", "done"):
+            self._refresh_worker_status(language)
+        if hasattr(self, "finding_empty_var"):
+            self.finding_empty_var.set(tr(self.finding_empty_var.get(), language))
+        if hasattr(self, "ai_state_badge"):
+            self._update_ai_badge()
+        if self._analysis_record_parts:
+            identity, name, path = self._analysis_record_parts
+            self.analysis_record_var.set(
+                f"{tr('分析文件', language)}: {identity}  ·  {name}  ·  {path}" if language == "en-US"
+                else f"分析文件：{identity}  ·  {name}  ·  {path}")
+        if hasattr(self, "report_language_display_var"):
+            self.report_language_display_var.set(self._report_language_label(
+                self.report_language_var.get(), language))
+
+    def _refresh_worker_status(self, language: str) -> None:
+        """Render only app-owned worker footer text from its canonical fields."""
+        kind = self._worker_status_kind
+        if kind == "busy" and self._worker_activity_source:
+            activity = tr(self._worker_activity_source, language)
+            suffix = tr("；界面可继续响应，也可请求取消。", language)
+            self.activity_var.set(activity)
+            self.status_var.set(activity + suffix)
+        elif kind == "done" and self._worker_label_source:
+            label = tr(self._worker_label_source, language)
+            self.activity_var.set(tr("已完成（需以分析状态为准）", language))
+            self.status_var.set(label + " " + tr(
+                "已结束。PARTIAL / FAILED 不表示检查通过。", language))
+
+    @staticmethod
+    def _report_language_label(value: str, language: str) -> str:
+        labels = {
+            "auto": {"zh-CN": "跟随界面", "en-US": "Follow interface"},
+            "zh-CN": {"zh-CN": "简体中文报告", "en-US": "Chinese report"},
+            "en-US": {"zh-CN": "英文报告", "en-US": "English report"},
+        }
+        return labels.get(value, labels["auto"])[normalize_language(language)]
+
+    def _report_language_options(self, language: str) -> tuple[str, ...]:
+        return tuple(self._report_language_label(value, language) for value in
+                     ("auto", "zh-CN", "en-US"))
+
+    def _select_report_language(self, _event: Any = None) -> None:
+        selected = self.report_language_display_var.get()
+        for value in ("auto", "zh-CN", "en-US"):
+            if selected == self._report_language_label(value, self.language):
+                self.report_language_var.set(value)
+                return
+        self.report_language_display_var.set(self._report_language_label(
+            self.report_language_var.get(), self.language))
+
+    @staticmethod
+    def _use_case_label(token: str, language: str) -> str:
+        labels = {
+            "home_pc": {"zh-CN": "家用电脑", "en-US": "Home PC"},
+            "office_pc": {"zh-CN": "办公电脑", "en-US": "Office PC"},
+            "office_server": {"zh-CN": "办公服务器", "en-US": "Office server"},
+            "unknown": {"zh-CN": "未知/其他", "en-US": "Unknown / other"},
+        }
+        return labels.get(token, {}).get(normalize_language(language), "")
+
+    def _selected_use_case_token(self) -> str | None:
+        selected = self.use_case_var.get()
+        if selected in USE_CASES:
+            return USE_CASES[selected]
+        for token in ("home_pc", "office_pc", "office_server", "unknown"):
+            if selected in (self._use_case_label(token, "zh-CN"),
+                            self._use_case_label(token, "en-US")):
+                return token
+        return None
+
+    def _local_use_case_options(self) -> tuple[str, ...]:
+        return tuple(self._use_case_label(token, self.language) for token in
+                     ("home_pc", "office_pc", "office_server", "unknown"))
+
+    def _cli_command(self, arguments: list[str], language: str | None = None,
+                     report_language: str | None = None) -> list[str]:
+        human_language = normalize_language(language or self.language)
+        report_choice = report_language or self.report_language_var.get()
+        resolved_report_language = human_language if report_choice == "auto" else normalize_language(report_choice)
+        return cli_command(["--lang", human_language, "--report-lang", resolved_report_language, *arguments])
+
+    def _resolved_report_language(self, human_language: str | None = None) -> str:
+        human = normalize_language(human_language or self.language)
+        choice = self.report_language_var.get()
+        return human if choice == "auto" else normalize_language(choice)
 
     def _new_page(self, key: str) -> Any:
         tk, ttk = self.tk, self.ttk
@@ -303,6 +672,8 @@ class InspectionDesktop:
         canvas.grid(row=1, column=0, sticky="nsew")
         content = ttk.Frame(canvas, style="Workspace.TFrame",
                             padding=(SPACING["page_x"], content_top, SPACING["page_x"], SPACING["page_y"]))
+        self._localized_reflow_containers.add(content)
+        content.bind("<Configure>", self._schedule_localized_reflow, add="+")
         window = canvas.create_window((0, 0), window=content, anchor="nw")
         content.columnconfigure(0, weight=1)
         page_state = {
@@ -434,23 +805,29 @@ class InspectionDesktop:
         ttk = self.ttk
         header = ttk.Frame(parent, style="CardInner.TFrame", padding=(0, 0, 0, SPACING["field"]))
         header.grid_columnconfigure(0, weight=1)
-        ttk.Label(header, text=title, style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text=tr(title, self.language), style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
         if subtitle:
-            ttk.Label(header, text=subtitle, style="CardMuted.TLabel", wraplength=680).grid(
+            ttk.Label(header, text=tr(subtitle, self.language), style="CardMuted.TLabel", wraplength=680).grid(
                 row=1, column=0, sticky="w", pady=(4, 0))
         return header
 
     def _primary(self, parent: Any, text: str, command: Callable[[], Any], *, width: int = 16) -> Any:
-        return self.ttk.Button(parent, text=text, command=command, style="Primary.TButton", width=width)
+        button = self.ttk.Button(parent, text=tr(text, self.language), command=command,
+                                 style="Primary.TButton", width=width)
+        button._i18n_min_width = width
+        return button
 
     def _secondary(self, parent: Any, text: str, command: Callable[[], Any], *, width: int = 14) -> Any:
-        return self.ttk.Button(parent, text=text, command=command, style="Secondary.TButton", width=width)
+        button = self.ttk.Button(parent, text=tr(text, self.language), command=command,
+                                 style="Secondary.TButton", width=width)
+        button._i18n_min_width = width
+        return button
 
     def _entry(self, parent: Any, variable: Any, *, width: int | None = None) -> Any:
         return self.ttk.Entry(parent, textvariable=variable, style="Field.TEntry", width=width)
 
     def _field_label(self, parent: Any, text: str, row: int, col: int, *, colspan: int = 1) -> None:
-        self.ttk.Label(parent, text=text, style="FieldLabel.TLabel").grid(
+        self.ttk.Label(parent, text=tr(text, self.language), style="FieldLabel.TLabel").grid(
             row=row, column=col, columnspan=colspan, sticky="w", pady=(SPACING["field"], 4))
 
     def _text_area(self, parent: Any, *, row: int, height: int, background: str,
@@ -480,6 +857,8 @@ class InspectionDesktop:
                        weights: tuple[int, int] = (2, 1), stretch_second: bool = True) -> None:
         parent.columnconfigure(0, weight=weights[0], uniform="responsive")
         parent.columnconfigure(1, weight=weights[1], uniform="responsive")
+        self._localized_reflow_containers.add(parent)
+        parent.bind("<Configure>", self._schedule_localized_reflow, add="+")
         first.grid(row=0, column=0, sticky="nsew", padx=(0, SPACING["section"]))
         second.grid(row=0, column=1, sticky="nsew" if stretch_second else "new")
         pair = {"parent": parent, "first": first, "second": second, "threshold": threshold,
@@ -524,7 +903,7 @@ class InspectionDesktop:
         self._card_header(flow, "作业流程", "各步骤只显示本会话实际状态").grid(row=0, column=0, sticky="ew")
         steps = ttk.Frame(flow, style="CardInner.TFrame")
         steps.grid(row=1, column=0, sticky="ew")
-        for col in range(4):
+        for col in range(2):
             steps.columnconfigure(col, weight=1, uniform="steps")
         self.workflow_vars = [
             ("1", "确认授权", tk.StringVar(value="等待确认")),
@@ -532,15 +911,20 @@ class InspectionDesktop:
             ("3", "规则分析", tk.StringVar(value="等待证据")),
             ("4", "报告与复查", tk.StringVar(value="等待分析")),
         ]
-        for col, (number, title, variable) in enumerate(self.workflow_vars):
+        for index, (number, title, variable) in enumerate(self.workflow_vars):
             item = ttk.Frame(steps, style="CardInner.TFrame", padding=(8, 6))
-            item.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 8, 0))
+            column = index % 2
+            item.grid(row=index // 2, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
             tk.Label(item, text=number, width=2, background=COLORS["blue_soft"], foreground=COLORS["blue"],
                      font=(self.font_family, FONT_SIZE["body"], "bold"), padx=4, pady=4).pack(side="left", padx=(0, 9))
             text = ttk.Frame(item, style="CardInner.TFrame")
             text.pack(side="left", fill="x", expand=True)
-            ttk.Label(text, text=title, style="Card.TLabel").pack(anchor="w")
-            ttk.Label(text, textvariable=variable, style="CardMuted.TLabel").pack(anchor="w", pady=(2, 0))
+            title_label = ttk.Label(text, text=title, style="Card.TLabel")
+            title_label._i18n_width_parent = steps
+            title_label.pack(anchor="w")
+            state_label = ttk.Label(text, textvariable=variable, style="CardMuted.TLabel")
+            state_label._i18n_width_parent = steps
+            state_label.pack(anchor="w", pady=(2, 0))
 
         pair = ttk.Frame(content, style="Workspace.TFrame")
         pair.grid(row=2, column=0, sticky="ew", pady=(0, 12))
@@ -597,7 +981,7 @@ class InspectionDesktop:
         self._entry(config, self.project_var).grid(row=2, column=0, sticky="ew", padx=(0, 8))
         self._entry(config, self.asset_var).grid(row=2, column=1, sticky="ew", padx=(8, 0))
         self._field_label(config, "检查场景", 3, 0, colspan=2)
-        self.use_case_combo = ttk.Combobox(config, textvariable=self.use_case_var, values=list(USE_CASES),
+        self.use_case_combo = ttk.Combobox(config, textvariable=self.use_case_var, values=self._local_use_case_options(),
                                            state="readonly", style="Field.TCombobox")
         self.use_case_combo.grid(row=4, column=0, columnspan=2, sticky="ew")
         self._field_label(config, "案例保存目录", 5, 0, colspan=2)
@@ -628,7 +1012,9 @@ class InspectionDesktop:
         run.columnconfigure(0, weight=1)
         header = ttk.Frame(run, style="CardInner.TFrame")
         header.grid(row=0, column=0, sticky="ew")
-        ttk.Label(header, text="执行进度与日志", style="CardTitle.TLabel").pack(side="left")
+        header_title = ttk.Label(header, text="执行进度与日志", style="CardTitle.TLabel")
+        header_title._i18n_keep_natural_width = True
+        header_title.pack(side="left")
         self.local_state_badge = ttk.Label(header, textvariable=self.activity_var, style="StatusEmpty.TLabel")
         self.local_state_badge.pack(side="right")
         run.grid_rowconfigure(1, minsize=SPACING["section"])
@@ -709,7 +1095,7 @@ class InspectionDesktop:
         self._entry(source, self.project_var).grid(row=6, column=0, sticky="ew", padx=(0, 8))
         self._entry(source, self.asset_var).grid(row=6, column=1, sticky="ew", padx=(8, 0))
         self._field_label(source, "用途（原生目录及粘贴证据必填）", 7, 0, colspan=2)
-        ttk.Combobox(source, textvariable=self.use_case_var, values=list(USE_CASES),
+        ttk.Combobox(source, textvariable=self.use_case_var, values=self._local_use_case_options(),
                      state="readonly", style="Field.TCombobox").grid(row=8, column=0, columnspan=2, sticky="ew")
         self._field_label(source, "案例保存目录", 9, 0, colspan=2)
         self._directory_row(source, 10, self.cases_var, show_suffix=True)
@@ -734,8 +1120,8 @@ class InspectionDesktop:
             label.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=7)
             rule_labels.append(label)
 
-        def resize_rule_text(event: Any) -> None:
-            wraplength = max(160, event.width - 32)
+        def resize_rule_text(_event: Any = None) -> None:
+            wraplength = max(160, int(rules_frame.winfo_width()) - 32)
             for label in rule_labels:
                 if int(label.cget("wraplength")) != wraplength:
                     label.configure(wraplength=wraplength)
@@ -879,8 +1265,20 @@ class InspectionDesktop:
         self.report_path_var = tk.StringVar(value="尚无本会话报告。")
         ttk.Label(outputs, textvariable=self.report_path_var, style="CardMuted.TLabel",
                   wraplength=800).grid(row=1, column=0, sticky="w", pady=(0, 10))
+        report_language_row = ttk.Frame(outputs, style="CardInner.TFrame")
+        report_language_row.grid(row=2, column=0, sticky="w", pady=(0, 10))
+        ttk.Label(report_language_row, text="报告语言", style="CardMuted.TLabel").pack(
+            side="left", padx=(0, 8))
+        self.report_language_combo = ttk.Combobox(
+            report_language_row, textvariable=self.report_language_display_var,
+            values=self._report_language_options(self.language), state="readonly", width=20,
+        )
+        self.report_language_combo.pack(side="left")
+        self.report_language_combo.bind("<<ComboboxSelected>>", self._select_report_language)
+        self.report_language_display_var.set(self._report_language_label(
+            self.report_language_var.get(), self.language))
         buttons = ttk.Frame(outputs, style="CardInner.TFrame")
-        buttons.grid(row=2, column=0, sticky="w")
+        buttons.grid(row=3, column=0, sticky="w")
         for name, button_text in (("report.md", "Markdown"), ("report.html", "HTML"),
                                   ("findings.csv", "CSV"), ("analysis.json", "JSON")):
             self._secondary(buttons, button_text, lambda file=name: self._open_report_file(file), width=11).pack(
@@ -942,20 +1340,20 @@ class InspectionDesktop:
 
     def _update_source_controls(self) -> None:
         if self.source_var.get() == "paste":
-            self.source_browse_button.configure(text="选择文件…", command=self._pick_paste_file)
+            self.source_browse_button.configure(text=tr("选择文件…", self.language), command=self._pick_paste_file)
             self.source_hint_var.set(
-                "粘贴通道使用现有 paste-import 校验；选择完整的 SecureCRT / 4A 导出文本，不执行其中内容。")
+                tr("粘贴通道使用现有 paste-import 校验；选择完整的 SecureCRT / 4A 导出文本，不执行其中内容。", self.language))
         else:
-            self.source_browse_button.configure(text="选择目录…", command=self._pick_bundle)
-            self.source_hint_var.set("支持固定采集器输出目录及 EvidenceBundle；仅复制并解析允许的证据文件。")
+            self.source_browse_button.configure(text=tr("选择目录…", self.language), command=self._pick_bundle)
+            self.source_hint_var.set(tr("支持固定采集器输出目录及 EvidenceBundle；仅复制并解析允许的证据文件。", self.language))
 
     def _update_ai_badge(self) -> None:
         enabled = self.ai_enabled_var.get()
-        self.ai_state_badge.configure(text="已启用" if enabled else "默认关闭",
+        self.ai_state_badge.configure(text=tr("已启用" if enabled else "默认关闭", self.language),
                                       style="StatusPartial.TLabel" if enabled else "StatusEmpty.TLabel")
 
     def _update_workflow(self) -> None:
-        self.workflow_vars[0][2].set("已确认只读授权" if self.local_consent_var.get() else "等待确认")
+        self.workflow_vars[0][2].set(tr("已确认只读授权" if self.local_consent_var.get() else "等待确认", self.language))
 
     def _pick_directory(self, variable: Any) -> None:
         from tkinter import filedialog
@@ -971,8 +1369,9 @@ class InspectionDesktop:
 
     def _pick_paste_file(self) -> None:
         from tkinter import filedialog
-        value = filedialog.askopenfilename(parent=self.root, title="选择完整的 SecureCRT / 4A 粘贴导出文件",
-                                           filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")])
+        value = filedialog.askopenfilename(parent=self.root, title=tr("选择完整的 SecureCRT / 4A 粘贴导出文件", self.language),
+                                           filetypes=[(tr("文本文件", self.language), "*.txt"),
+                                                      (tr("所有文件", self.language), "*.*")])
         if value:
             self.bundle_var.set(value)
 
@@ -982,7 +1381,7 @@ class InspectionDesktop:
     def _ai_settings_dialog(self) -> None:
         tk, ttk = self.tk, self.ttk
         dialog = tk.Toplevel(self.root)
-        dialog.title("Ollama 辅助建议设置")
+        dialog.title(tr("Ollama 辅助建议设置", self.language))
         dialog.transient(self.root)
         dialog.resizable(False, False)
         dialog.grab_set()
@@ -1012,6 +1411,19 @@ class InspectionDesktop:
         buttons.grid(row=8, column=0, columnspan=2, sticky="e", pady=(18, 0))
         self._secondary(buttons, "取消", dialog.destroy).pack(side="right", padx=(8, 0))
         self._primary(buttons, "保存本次设置", dialog.destroy, width=16).pack(side="right")
+        def localize_dialog(parent: Any) -> None:
+            for widget in parent.winfo_children():
+                try:
+                    source = getattr(widget, "_i18n_source_text", None)
+                    if source is None:
+                        source = widget.cget("text")
+                        widget._i18n_source_text = source
+                    if source:
+                        widget.configure(text=tr(str(source), self.language))
+                except Exception:
+                    pass
+                localize_dialog(widget)
+        localize_dialog(dialog)
         dialog.update_idletasks()
         x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - dialog.winfo_reqwidth()) // 2)
         y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - dialog.winfo_reqheight()) // 2)
@@ -1050,19 +1462,23 @@ class InspectionDesktop:
         aliases = self._aliases()
         if not aliases:
             return
-        use_case = USE_CASES.get(self.use_case_var.get())
+        use_case = self._selected_use_case_token()
         if not use_case:
             self._message("请选择巡检场景。")
             return
-        command = cli_command([
+        language = self.language
+        report_language = self._resolved_report_language(language)
+        command = self._cli_command([
             "inspect-local", "--project-alias", aliases[0], "--asset-alias", aliases[1],
             "--use-case", use_case, "--cases", str(Path(self.cases_var.get()).expanduser()),
             "--output", str(Path(self.reports_var.get()).expanduser()),
-        ])
+        ], report_language=report_language)
         self._start_worker("本机只读巡检", lambda: self._run_cli(command, allow_partial=True),
                            activity="正在进行本机只读巡检")
 
     def _start_import(self) -> None:
+        language = self.language
+        report_language = self._resolved_report_language(language)
         selected_text = self.bundle_var.get().strip()
         if not selected_text:
             self._message("请选择证据目录或完整的粘贴导出文件。")
@@ -1077,19 +1493,20 @@ class InspectionDesktop:
             aliases = self._aliases()
             if not aliases:
                 return
-            use_case = USE_CASES.get(self.use_case_var.get())
+            use_case = self._selected_use_case_token()
             if not use_case:
                 self._message("请选择粘贴证据对应的实际用途。")
                 return
             operation = lambda: self._paste_import_and_analyze(
-                selected, cases_dir, reports_dir, aliases[0], aliases[1], use_case, ai_options)
+                selected, cases_dir, reports_dir, aliases[0], aliases[1], use_case, ai_options,
+                language, report_language)
         else:
             manifest = selected / "manifest.json"
             if not manifest.is_file():
                 aliases = self._aliases()
                 if not aliases:
                     return
-                use_case = USE_CASES.get(self.use_case_var.get())
+                use_case = self._selected_use_case_token()
                 if not use_case:
                     self._message("原生证据目录尚未封装；请选择实际用途。")
                     return
@@ -1097,11 +1514,13 @@ class InspectionDesktop:
                 aliases = (self.project_var.get().strip(), self.asset_var.get().strip())
                 use_case = ""
             operation = lambda: self._import_and_analyze(
-                selected, cases_dir, reports_dir, aliases[0], aliases[1], use_case, ai_options)
+                selected, cases_dir, reports_dir, aliases[0], aliases[1], use_case, ai_options,
+                language, report_language)
         self._start_worker("证据导入与分析", operation, activity="正在校验证据并进行规则分析")
 
     def _import_and_analyze(self, selected: Path, cases_dir: Path, reports_dir: Path,
-                            project: str, asset: str, use_case: str, ai_options: list[str]) -> dict[str, Any]:
+                            project: str, asset: str, use_case: str, ai_options: list[str],
+                            language: str, report_language: str | None = None) -> dict[str, Any]:
         if not selected.is_dir():
             raise FileNotFoundError("所选证据目录不存在。")
         cases_dir.mkdir(parents=True, exist_ok=True)
@@ -1127,19 +1546,21 @@ class InspectionDesktop:
                             or staging.resolve(strict=True) != staging_root):
                         raise BundleError("Temporary evidence staging path escaped its private cases directory; it was preserved.")
                     shutil.rmtree(staging)
-        command = cli_command(["analyze", str(case_path), "--output", str(reports_dir), *ai_options])
+        command = self._cli_command(["analyze", str(case_path), "--output", str(reports_dir), *ai_options],
+                                    language, report_language)
         result = self._run_cli(command, allow_partial=True)
         result["case"] = str(case_path)
         return result
 
     def _paste_import_and_analyze(self, selected: Path, cases_dir: Path, reports_dir: Path,
-                                  project: str, asset: str, use_case: str, ai_options: list[str]) -> dict[str, Any]:
+                                  project: str, asset: str, use_case: str, ai_options: list[str],
+                                  language: str, report_language: str | None = None) -> dict[str, Any]:
         if not selected.is_file():
             raise FileNotFoundError("所选粘贴导出文件不存在。")
-        command = cli_command([
+        command = self._cli_command([
             "paste-import", str(selected), "--project-alias", project, "--asset-alias", asset,
             "--use-case", use_case, "--cases", str(cases_dir), "--output", str(reports_dir),
-        ])
+        ], language)
         imported = self._run_cli(command)
         output = imported.get("command_output", "")
         case_path = next((Path(line.split("=", 1)[1].strip()) for line in output.splitlines()
@@ -1147,7 +1568,8 @@ class InspectionDesktop:
         if not case_path:
             raise RuntimeError("现有 paste-import 命令未返回已导入案例路径。")
         analysis = self._run_cli(
-            cli_command(["analyze", str(case_path), "--output", str(reports_dir), *ai_options]),
+            self._cli_command(["analyze", str(case_path), "--output", str(reports_dir), *ai_options],
+                              language, report_language),
             allow_partial=True)
         analysis["case"] = str(case_path)
         return analysis
@@ -1168,7 +1590,7 @@ class InspectionDesktop:
         if output.strip():
             self.events.put(("log", output[-MAX_CHILD_OUTPUT:]))
         if code not in ({0, 4} if allow_partial else {0}):
-            raise RuntimeError(f"命令退出码 {code}；请检查上方安全错误信息。")
+            raise RuntimeError(tr("命令退出码 {code}；请检查上方安全错误信息。", self.language, code=code))
         analysis_path = None
         comparison_path = None
         for line in output.splitlines():
@@ -1199,14 +1621,15 @@ class InspectionDesktop:
     def _load_analysis_dialog(self) -> None:
         from tkinter import filedialog
         source = filedialog.askopenfilename(
-            parent=self.root, title="选择已有 analysis.json",
-            filetypes=[("分析 JSON", "analysis.json"), ("JSON", "*.json")])
+            parent=self.root, title=tr("选择已有 analysis.json", self.language),
+            filetypes=[(tr("分析 JSON", self.language), "analysis.json"), ("JSON", "*.json")])
         if not source:
             return
         try:
             value, metadata = self._read_analysis(Path(source))
         except Exception as exc:
-            self._message(f"无法加载分析文件：{type(exc).__name__}: {exc}")
+            diagnostic = display_desktop_error(f"{type(exc).__name__}: {exc}", self.language)
+            self._message(tr("无法加载分析文件：{error}", self.language, error=diagnostic))
             return
         self._show_analysis({"analysis": value, "metadata": metadata,
                              "analysis_path": source, "report_dir": str(Path(source).parent)})
@@ -1215,44 +1638,44 @@ class InspectionDesktop:
         from tkinter import filedialog, messagebox
         if self.last_analysis and self.last_analysis.is_file():
             choice = messagebox.askyesnocancel(
-                "Codex 脱敏交付", "使用当前已加载的 analysis.json？\n选择“否”以另选文件。",
+                tr("Codex 脱敏交付", self.language), tr("使用当前已加载的 analysis.json？\n选择“否”以另选文件。", self.language),
                 parent=self.root)
             if choice is None:
                 return
             source = str(self.last_analysis) if choice else filedialog.askopenfilename(
-                parent=self.root, title="选择报告的 analysis.json",
-                filetypes=[("分析 JSON", "analysis.json"), ("JSON", "*.json")])
+                parent=self.root, title=tr("选择报告的 analysis.json", self.language),
+                filetypes=[(tr("分析 JSON", self.language), "analysis.json"), ("JSON", "*.json")])
         else:
             source = filedialog.askopenfilename(
-                parent=self.root, title="选择报告的 analysis.json",
-                filetypes=[("分析 JSON", "analysis.json"), ("JSON", "*.json")])
+                parent=self.root, title=tr("选择报告的 analysis.json", self.language),
+                filetypes=[(tr("分析 JSON", self.language), "analysis.json"), ("JSON", "*.json")])
         if not source:
             return
         output = filedialog.asksaveasfilename(
-            parent=self.root, title="保存脱敏交付文件",
+            parent=self.root, title=tr("保存脱敏交付文件", self.language),
             defaultextension=".json", filetypes=[("JSON", "*.json")])
         if output:
-            command = cli_command(["codex-export", source, "--output", output])
+            command = self._cli_command(["codex-export", source, "--output", output])
             self._start_worker("Codex 脱敏导出", lambda: self._run_cli(command),
                                activity="正在生成脱敏交付文件")
 
     def _start_compare(self) -> None:
         from tkinter import filedialog
         before = filedialog.askopenfilename(
-            parent=self.root, title="选择整改前 analysis.json",
-            filetypes=[("分析 JSON", "analysis.json"), ("JSON", "*.json")])
+            parent=self.root, title=tr("选择整改前 analysis.json", self.language),
+            filetypes=[(tr("分析 JSON", self.language), "analysis.json"), ("JSON", "*.json")])
         if not before:
             return
         after = filedialog.askopenfilename(
-            parent=self.root, title="选择整改后 analysis.json",
-            filetypes=[("分析 JSON", "analysis.json"), ("JSON", "*.json")])
+            parent=self.root, title=tr("选择整改后 analysis.json", self.language),
+            filetypes=[(tr("分析 JSON", self.language), "analysis.json"), ("JSON", "*.json")])
         if not after:
             return
         output = filedialog.asksaveasfilename(
-            parent=self.root, title="保存复查结果",
+            parent=self.root, title=tr("保存复查结果", self.language),
             defaultextension=".json", filetypes=[("JSON", "*.json")])
         if output:
-            command = cli_command(["compare", before, after, "--output", output])
+            command = self._cli_command(["compare", before, after, "--output", output])
             self._start_worker("复查比较", lambda: self._run_cli(command, allow_partial=True),
                                activity="正在按正式比较规则核对两份分析")
 
@@ -1274,17 +1697,24 @@ class InspectionDesktop:
         self.analysis_status_var.set(str(status))
         self.finding_count_var.set(str(len(findings) if isinstance(findings, list) else 0))
         self.gap_count_var.set(str(len(gaps)))
-        identity = self.analysis_metadata.get("asset_alias") or self.analysis_metadata.get("project_alias") or "已加载分析"
-        self.analysis_record_var.set(f"{identity}  ·  {analysis_path.name}  ·  {analysis_path}")
+        identity = self.analysis_metadata.get("asset_alias") or self.analysis_metadata.get("project_alias") or tr("已加载分析", self.language)
+        self._analysis_record_parts = (str(identity), analysis_path.name, str(analysis_path))
+        self.analysis_record_var.set(
+            f"{tr('分析文件', self.language)}: {identity}  ·  {analysis_path.name}  ·  {analysis_path}" if self.language == "en-US"
+            else f"分析文件：{identity}  ·  {analysis_path.name}  ·  {analysis_path}")
         self.report_path_var.set(str(report_dir))
         self._set_analysis_badge(status)
         self._render_findings()
         self._render_gap_text()
         self._render_ai_advisory()
-        self.workflow_vars[1][2].set("证据已分析")
-        self.workflow_vars[2][2].set(f"{status} · {len(findings) if isinstance(findings, list) else 0} 条")
-        self.workflow_vars[3][2].set("报告已生成" if report_dir.is_dir() else "已加载分析文件")
+        self.workflow_vars[1][2].set(tr("证据已分析", self.language))
+        count = len(findings) if isinstance(findings, list) else 0
+        unit = "findings" if self.language == "en-US" else "条"
+        self.workflow_vars[2][2].set(f"{status} · {count} {unit}")
+        self.workflow_vars[3][2].set(tr("报告已生成" if report_dir.is_dir() else "已加载分析文件", self.language))
         self._append(
+            (f"\nAnalysis loaded: {status}; rule findings: {self.finding_count_var.get()}; "
+             f"evidence gaps/errors: {self.gap_count_var.get()}.\n") if self.language == "en-US" else
             f"\n已加载分析：{status}；规则 Finding {self.finding_count_var.get()} 条；"
             f"证据缺口/错误 {self.gap_count_var.get()} 条。\n")
 
@@ -1298,6 +1728,9 @@ class InspectionDesktop:
         if not hasattr(self, "finding_tree"):
             return
         tree = self.finding_tree
+        selected = tree.selection()
+        selected_finding = self._finding_by_iid.get(selected[0], {}) if selected else {}
+        selected_id = selected_finding.get("finding_id")
         tree.delete(*tree.get_children())
         self._finding_by_iid.clear()
         value = self.analysis_value or {}
@@ -1307,7 +1740,7 @@ class InspectionDesktop:
         findings = value.get("findings", [])
         if self._current_filter == "gaps":
             self._show_findings_empty("证据缺口与分析状态说明显示在下方区域。")
-            self._set_text(self.finding_detail, "已选择“证据缺口”。请查看下方的原始警告与错误列表。")
+            self._set_text(self.finding_detail, tr("已选择“证据缺口”。请查看下方的原始警告与错误列表。", self.language))
             return
         visible = []
         for finding in findings if isinstance(findings, list) else []:
@@ -1316,23 +1749,32 @@ class InspectionDesktop:
             if self._current_filter == "review" and finding.get("needs_human_review", True) is not True:
                 continue
             visible.append(finding)
+        self._fit_severity_column()
         for index, finding in enumerate(visible):
             iid = str(index)
+            rendered = display_finding(finding, self.language)
             severity = str(finding.get("severity", "未知"))
             evidence = finding.get("evidence", {})
             evidence_text = json.dumps(evidence, ensure_ascii=False, sort_keys=True) if isinstance(
                 evidence, (dict, list)) else str(evidence)
             evidence_text = evidence_text.replace("\n", " ")[:180]
             tag = severity if severity in {"Critical", "High", "Warning", "Info"} else ""
+            display_severity = severity_display(severity, self.language)
+            if display_severity == f"{severity} ({severity})":
+                display_severity = severity
             tree.insert("", "end", iid=iid, values=(
-                severity, str(finding.get("title", finding.get("finding_id", "未命名"))), evidence_text),
+                display_severity,
+                str(rendered.get("title", finding.get("finding_id", tr("未命名", self.language)))), evidence_text),
                 tags=(tag,) if tag else ())
             self._finding_by_iid[iid] = finding
         if visible:
             self._hide_findings_empty()
-            first = tree.get_children()[0]
-            tree.selection_set(first)
-            self._display_finding(self._finding_by_iid[first])
+            target_iid = next((iid for iid, finding in self._finding_by_iid.items()
+                               if finding.get("finding_id") == selected_id), None)
+            if target_iid is None:
+                target_iid = tree.get_children()[0]
+            tree.selection_set(target_iid)
+            self._display_finding(self._finding_by_iid[target_iid])
         else:
             if self._current_filter == "review":
                 message = "当前筛选条件下没有待复核 Finding；这不改变分析状态。"
@@ -1340,10 +1782,23 @@ class InspectionDesktop:
                 message = "分析中没有规则 Finding；证据缺口和状态仍需单独查看。"
             self.finding_detail.configure(height=3)
             self._show_findings_empty(message)
-            self._set_text(self.finding_detail, message)
+            self._set_text(self.finding_detail, tr(message, self.language))
+
+    def _fit_severity_column(self) -> None:
+        """Keep every built-in severity label visible in the current locale."""
+        import tkinter.font as tkfont
+
+        tree = self.finding_tree
+        style = self.ttk.Style(self.root)
+        font_spec = style.lookup("Treeview", "font") or "TkDefaultFont"
+        font = tkfont.Font(root=self.root, font=font_spec)
+        labels = tuple(severity_display(value, self.language) for value in (
+            "Critical", "Attention", "Warning", "Need Admin", "Info", "OK", "Skipped", "Failed"))
+        width = max(100, *(font.measure(label) + 20 for label in labels))
+        tree.column("severity", width=width, minwidth=width, stretch=False, anchor="center")
 
     def _show_findings_empty(self, message: str) -> None:
-        self.finding_empty_var.set(message)
+        self.finding_empty_var.set(tr(message, self.language))
         self.finding_tree.grid_remove()
         self.finding_scrollbar.grid_remove()
         self.finding_empty_label.grid(row=0, column=0, columnspan=2, sticky="nsew")
@@ -1367,7 +1822,10 @@ class InspectionDesktop:
 
     def _display_finding(self, finding: dict[str, Any]) -> None:
         self.finding_detail.configure(height=5)
+        rendered_finding = display_finding(finding, self.language)
         lines = []
+        if rendered_finding.get("_locale_source_note"):
+            lines.append(str(rendered_finding["_locale_source_note"]))
         for key, label in (
             ("finding_id", "Finding ID"), ("rule_id", "规则 ID"), ("title", "检查项目"),
             ("severity", "风险等级"), ("category", "类别"), ("component", "对象"),
@@ -1378,10 +1836,15 @@ class InspectionDesktop:
         ):
             if key not in finding:
                 continue
-            item = finding[key]
+            item = rendered_finding.get(key, finding[key])
+            if key == "severity":
+                explanation = severity_explanation(str(finding[key]), self.language)
+                item = f"{finding[key]} — {explanation}" if explanation else str(finding[key])
+            localized_label = tr(label, self.language)
             rendered = json.dumps(item, ensure_ascii=False, indent=2) if isinstance(item, (dict, list)) else str(item)
-            lines.append(f"{label}：\n{rendered}")
-        self._set_text(self.finding_detail, "\n\n".join(lines) or "该 Finding 没有可显示的详情字段。")
+            separator = ":" if self.language == "en-US" else "："
+            lines.append(f"{localized_label}{separator}\n{rendered}")
+        self._set_text(self.finding_detail, "\n\n".join(lines) or tr("该 Finding 没有可显示的详情字段。", self.language))
 
     def _render_gap_text(self) -> None:
         value = self.analysis_value or {}
@@ -1389,27 +1852,33 @@ class InspectionDesktop:
         for key, label in (("warnings", "警告 / 证据缺口"), ("errors", "分析错误")):
             entries = value.get(key, [])
             if isinstance(entries, list):
-                lines.extend(f"{label}：{item}" for item in entries)
+                separator = ":" if self.language == "en-US" else "："
+                lines.extend(f"{tr(label, self.language)}{separator}{gap_text(item, self.language)}" for item in entries)
         if not lines:
-            lines = ["分析文件未记录警告或错误。该信息不代表已检查范围外的安全状态。"]
+            lines = [tr("分析文件未记录警告或错误。该信息不代表已检查范围外的安全状态。", self.language)]
         self._set_text(self.gaps_text, "\n".join(lines))
 
     def _render_ai_advisory(self) -> None:
         advisory = self.analysis_metadata.get("ai_advisory")
         if not isinstance(advisory, dict):
-            text = "当前分析没有 AI 辅助建议字段。AI 默认关闭，且不会改变确定性 Finding。"
+            text = tr("当前分析没有 AI 辅助建议字段。AI 默认关闭，且不会改变确定性 Finding。", self.language)
         else:
-            lines = [f"AI 状态：{advisory.get('status', '未知')}",
-                     "AI 内容仅为辅助建议，不是确定性风险结论。"]
+            separator = ": " if self.language == "en-US" else "："
+            lines = [f"AI status: {advisory.get('status', 'UNKNOWN')}" if self.language == "en-US"
+                     else f"AI 状态：{advisory.get('status', 'UNKNOWN')}",
+                     tr("AI 内容仅为辅助建议，不是确定性风险结论。", self.language)]
             if advisory.get("reason"):
-                lines.append(f"原因：{advisory['reason']}")
+                lines.append(f"{tr('原因：', self.language)}{display_reason(advisory['reason'], self.language)}")
             suggestions = advisory.get("suggestions", [])
             if isinstance(suggestions, list):
                 for index, suggestion in enumerate(suggestions, start=1):
                     if isinstance(suggestion, dict):
                         refs = suggestion.get("evidence_refs", [])
                         ref_text = ", ".join(str(ref) for ref in refs) if isinstance(refs, list) else str(refs)
-                        lines.append(f"{index}. {suggestion.get('text', '')}  （引用：{ref_text or '未提供'}）")
+                        refs_label = " (references: " if self.language == "en-US" else "  （引用："
+                        not_provided = "Not provided" if self.language == "en-US" else "未提供"
+                        suffix = ")" if self.language == "en-US" else "）"
+                        lines.append(f"{index}. {suggestion.get('text', '')}{refs_label}{ref_text or not_provided}{suffix}")
             text = "\n".join(lines)
         self._set_text(self.ai_text, text)
 
@@ -1422,29 +1891,29 @@ class InspectionDesktop:
         widget.configure(state="disabled")
 
     def _update_empty_report(self) -> None:
-        self.analysis_status_var.set("未加载")
+        self.analysis_status_var.set(tr("未加载", self.language))
         self._set_analysis_badge("未加载")
         self.finding_count_var.set("—")
         self.gap_count_var.set("—")
         self.finding_detail.configure(height=3)
-        self._set_text(self.finding_detail, "未加载分析文件。选择真实 analysis.json 后，这里展示对应 Finding 字段。")
-        self._set_text(self.gaps_text, "未加载分析文件。")
-        self._set_text(self.ai_text, "AI 默认关闭；加载真实分析文件后显示该分析实际记录的 AI 状态与建议。")
+        self._set_text(self.finding_detail, tr("未加载分析文件。选择真实 analysis.json 后，这里展示对应 Finding 字段。", self.language))
+        self._set_text(self.gaps_text, tr("未加载分析文件。", self.language))
+        self._set_text(self.ai_text, tr("AI 默认关闭；加载真实分析文件后显示该分析实际记录的 AI 状态与建议。", self.language))
         self._render_findings()
 
     def _open_last_report(self) -> None:
         if not self.last_report_dir or not self.last_report_dir.is_dir():
-            self._message("本次会话还没有可查看的报告目录。")
+            self._message(tr("本次会话还没有可查看的报告目录。", self.language))
             return
         self._open_path(self.last_report_dir)
 
     def _open_report_file(self, name: str) -> None:
         if not self.last_report_dir:
-            self._message("尚无本会话报告。请先完成分析或加载分析文件。")
+            self._message(tr("尚无本会话报告。请先完成分析或加载分析文件。", self.language))
             return
         path = self.last_report_dir / name
         if not path.is_file():
-            self._message(f"报告文件不存在：{name}")
+            self._message(tr("报告文件不存在：{name}", self.language, name=name))
             return
         self._open_path(path)
 
@@ -1457,7 +1926,8 @@ class InspectionDesktop:
             else:
                 subprocess.Popen(["xdg-open", str(path)], shell=False)
         except Exception as exc:
-            self._message(f"无法打开所选报告：{type(exc).__name__}: {exc}")
+            self._message(tr("无法打开所选报告：{error_type}: {error}", self.language,
+                             error_type=type(exc).__name__, error=exc))
 
     def _start_worker(self, label: str, operation: Callable[[], Any], *, activity: str) -> None:
         if self.busy:
@@ -1465,8 +1935,10 @@ class InspectionDesktop:
             return
         self.cancel_event.clear()
         self.busy = True
-        self.activity_var.set(activity)
-        self.status_var.set(activity + "；界面可继续响应，也可请求取消。")
+        self._worker_status_kind = "busy"
+        self._worker_activity_source = activity
+        self._worker_label_source = label
+        self._refresh_worker_status(self.language)
         self.cancel_button.configure(state="normal")
         self.footer_progress.grid()
         self.footer_progress.start(12)
@@ -1501,25 +1973,33 @@ class InspectionDesktop:
                     try:
                         self._show_analysis(value)
                     except Exception as exc:
-                        self._append(f"\n结果文件无法安全显示：{type(exc).__name__}: {exc}\n")
-                        self.status_var.set("分析已生成，但结果文件未能安全加载；未显示为成功。")
+                        diagnostic = display_desktop_error(f"{type(exc).__name__}: {exc}", self.language)
+                        self._append(f"\n{tr('结果文件无法安全显示：', self.language)}{diagnostic}\n")
+                        self.status_var.set(tr("分析已生成，但结果文件未能安全加载；未显示为成功。", self.language))
                 elif kind == "comparison":
                     self.compare_path = Path(value)
                     self.compare_result_var.set(str(value))
-                    self._append(f"\n复查比较文件：{value}\n")
+                    self._append(f"\n{tr('复查比较文件：', self.language)}{value}\n")
                 elif kind == "done":
                     label, result = value
-                    self.activity_var.set("已完成（需以分析状态为准）")
-                    self.status_var.set(label + " 已结束。PARTIAL / FAILED 不表示检查通过。")
+                    self._worker_status_kind = "done"
+                    self._worker_label_source = label
+                    self._worker_activity_source = None
+                    self._refresh_worker_status(self.language)
                     if isinstance(result, dict) and result.get("case"):
-                        self._append("\n已导入案例：" + str(result["case"]) + "\n")
+                        self._append("\n" + tr("已导入案例：", self.language) + str(result["case"]) + "\n")
                     self._finish_worker()
                 elif kind == "error":
                     label, error = value
+                    self._worker_status_kind = None
+                    self._worker_label_source = None
+                    self._worker_activity_source = None
                     cancelled = self.cancel_event.is_set()
-                    self.activity_var.set("已取消" if cancelled else "未完成")
-                    self._append(f"\n操作未完成：{error}\n")
-                    self.status_var.set("操作已取消，未标记成功。" if cancelled else "操作未完成；已有确定性报告（若已生成）仍可查看。")
+                    self.activity_var.set(tr("已取消" if cancelled else "未完成", self.language))
+                    diagnostic = display_desktop_error(str(error), self.language)
+                    self._append(f"\n{tr('操作未完成：', self.language)}{diagnostic}\n")
+                    self.status_var.set(tr("操作已取消，未标记成功。" if cancelled else
+                                           "操作未完成；已有确定性报告（若已生成）仍可查看。", self.language))
                     self._finish_worker()
         except queue.Empty:
             pass
@@ -1548,20 +2028,21 @@ class InspectionDesktop:
 
     def _message(self, text: str) -> None:
         from tkinter import messagebox
-        messagebox.showinfo("巡检工具", text, parent=self.root)
+        messagebox.showinfo(tr("巡检工具", self.language), tr(text, self.language), parent=self.root)
 
     def _cancel(self) -> None:
         if self.busy:
             self.cancel_event.set()
-            self.status_var.set("正在请求取消，并清理本程序启动的子进程……")
+            self.status_var.set(tr("正在请求取消，并清理本程序启动的子进程……", self.language))
 
     def _close(self) -> None:
         if self.busy:
             from tkinter import messagebox
-            if not messagebox.askyesno("操作仍在运行", "取消当前操作并关闭窗口？", parent=self.root):
+            if not messagebox.askyesno(tr("操作仍在运行", self.language),
+                                       tr("取消当前操作并关闭窗口？", self.language), parent=self.root):
                 return
             self.cancel_event.set()
-            self.status_var.set("正在结束当前子进程；请等待窗口关闭。")
+            self.status_var.set(tr("正在结束当前子进程；请等待窗口关闭。", self.language))
             self.root.after(1200, self._finish_close)
             return
         self.root.destroy()

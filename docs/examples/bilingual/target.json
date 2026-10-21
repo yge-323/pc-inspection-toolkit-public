@@ -1,0 +1,8 @@
+{
+  "os_family": "windows",
+  "product": "合成 Windows 演示环境",
+  "version": "synthetic-1",
+  "architecture": "x64",
+  "use_case": "offline bilingual report example",
+  "scope": "basic"
+}

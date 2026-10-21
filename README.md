@@ -6,11 +6,11 @@
 
 PC Inspection Toolkit is a read-only inspection and offline evidence-analysis tool for authorized maintenance work. It presents collected facts, deterministic findings, evidence gaps, and human review steps. It does not automatically remediate systems or elevate privileges.
 
-The desktop GUI is in Chinese.
+The desktop GUI supports Simplified Chinese and English. It opens in Simplified Chinese by default and remembers the interface language per Windows user.
 
 ## Preview screens
 
-These screenshots show the real Windows desktop application. Paths shown are synthetic examples.
+These original preview screens show the real Windows desktop application in Simplified Chinese. Paths shown are synthetic examples.
 
 ![Overview](docs/assets/preview-overview.png)
 
@@ -18,9 +18,35 @@ These screenshots show the real Windows desktop application. Paths shown are syn
 
 ![Evidence import](docs/assets/preview-evidence-import.png)
 
+## Languages and reports
+
+Choose **Simplified Chinese** or **English** from the interface-language selector in the top bar. The choice is saved in the current Windows user's application preferences. The report-language selector on **Analysis and reports** can follow the interface or explicitly choose Chinese or English; a language change does not reset that choice.
+
+The CLI defaults to Chinese regardless of the GUI preference. Use `--lang` to select CLI messages and `--report-lang` to choose report text independently. If `--report-lang` is omitted, reports follow `--lang`. Markdown, HTML, and CSV report text is localized; `analysis.json` keeps the same machine-readable content. Built-in findings and guidance have Chinese and English text. Custom rule text, raw evidence, paths, and diagnostics that are not application-owned phrases remain in their source form.
+
+The bilingual screenshots below were captured from the Windows source GUI with synthetic paths and example analysis data.
+
+### Simplified Chinese
+
+![Chinese overview](docs/assets/bilingual-zh-overview.jpg)
+
+![Chinese local inspection](docs/assets/bilingual-zh-local.jpg)
+
+![Chinese analysis and reports](docs/assets/bilingual-zh-report.jpg)
+
+### English
+
+![English overview](docs/assets/bilingual-en-overview.jpg)
+
+![English local inspection](docs/assets/bilingual-en-local.jpg)
+
+![English analysis and reports](docs/assets/bilingual-en-report.jpg)
+
+See the [reproducible synthetic bilingual report example](docs/examples/bilingual/README.md) for paired reports and the sealed input bundle.
+
 ## Current source capabilities
 
-- A Chinese Windows desktop guide for explicitly authorized, current-PC read-only collection and evidence import. The desktop GUI is developed and validated on Windows; this is not a clean-machine or administrator acceptance claim.
+- A Simplified Chinese and English Windows desktop guide for explicitly authorized, current-PC read-only collection and evidence import. The desktop GUI is developed and validated on Windows; this is not a clean-machine or administrator acceptance claim.
 - Import and offline analysis of validated Windows and POSIX evidence bundles, with explicit `OK`, `PARTIAL`, or `FAILED` status.
 - POSIX shell collection and SecureCRT / 4A paste import for an already authorized session. The tool does not connect to those targets itself.
 - HTML, Markdown, CSV, and JSON reports; analysis comparison and redacted Codex export.
@@ -51,7 +77,7 @@ python --version
 python -c "import tkinter as tk; root=tk.Tk(); print('Tk', root.tk.call('info','patchlevel')); root.destroy()"
 ```
 
-Start the Chinese desktop guide. Opening it does not start collection:
+Start the desktop guide. It remembers the selected interface language; opening it does not start collection:
 
 ```powershell
 python -B .\desktop_launcher.py
@@ -59,13 +85,23 @@ python -B .\desktop_launcher.py
 
 ## Safe first experience
 
-1. Start the GUI above and browse **概览**, **本机巡检**, and **证据导入**.
+1. Start the GUI above and browse **Overview**, **Local inspection**, and **Import evidence** (shown as **概览**, **本机巡检**, and **证据导入** when Simplified Chinese is selected).
 2. Leave authorization unchecked. Do not start collection or select/import evidence during this first tour; close the GUI when finished.
 3. Then inspect the advanced CLI help. This displays usage only and does not collect or analyze evidence.
 
 ```powershell
-python -X utf8 -B .\inspection_cli.py --help
+python -X utf8 -B .\inspection_cli.py --lang en --help
 ```
+
+For an already imported case, CLI interface text and report text can be selected independently. This example uses English CLI messages and Chinese reports:
+
+```powershell
+python -X utf8 -B .\inspection_cli.py analyze <case-path> `
+  --output work/bilingual-report-demo/rendered/zh `
+  --lang en --report-lang zh
+```
+
+If `--report-lang` is omitted, the report language follows `--lang`. The CLI defaults to Chinese and does not read the GUI language preference.
 
 On Windows, use Python's UTF-8 mode (`-X utf8`) when redirecting CLI output, and read the redirected output as UTF-8. See the [recorded preview walkthrough](docs/PREVIEW_WALKTHROUGH.md) for the actual environment and results.
 

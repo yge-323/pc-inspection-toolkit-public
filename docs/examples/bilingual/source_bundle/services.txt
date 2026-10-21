@@ -1,0 +1,1 @@
+Name=合成演示服务;State=Running;StartMode=Auto;ProcessId=42;PathName=C:\Users\<synthetic>\AppData\Local\demo-service.exe

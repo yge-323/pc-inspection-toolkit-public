@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from models.analysis import AnalysisResult
+from locales import display_finding, text, validate_resources
+from locales.findings import severity_explanation
+from locales.findings import localize_legacy_report
 
 MAX_DETAIL_ROWS = 20
 SECURITY_VENDOR_DETAIL_LIMIT = 10
@@ -55,7 +58,10 @@ def render_report(
     analysis: AnalysisResult | list[dict[str, Any]],
     output_path: Path,
     raw_dir: Path,
+    language: str = "zh-CN",
 ) -> None:
+    validate_resources()
+    t = lambda key: text(key, language)
     analysis_result = (
         analysis
         if isinstance(analysis, AnalysisResult)
@@ -65,78 +71,79 @@ def render_report(
     system = results.get("system_info", {}).get("data", {})
     counts = Counter(_finding_severity(f) for f in findings)
     lines: list[str] = [
-        "# Windows 巡检报告",
+        f"# {t('legacy.title')}",
         "",
-        "## Analysis Status",
+        f"## {t('legacy.status_heading')}",
         "",
-        f"- **Analysis Status: {analysis_result.status}**",
+        f"- **{t('legacy.status')}: {analysis_result.status}**",
     ]
     if analysis_result.status == "PARTIAL":
-        lines.append("- **风险分析未完整完成；本报告不能作为完整的无风险结论。**")
+        lines.append(f"- **{t('legacy.incomplete')}**")
     elif analysis_result.status == "FAILED":
-        lines.append("- **风险分析失败；仅可使用已保留的采集证据进行人工复核。**")
-    lines.extend(_configuration_status_lines(analysis_result))
+        lines.append(f"- **{t('legacy.failed')}**")
+    lines.extend(_configuration_status_lines(analysis_result, language))
     lines.extend([
         "",
-        "## 1. 基本信息",
-        f"- 主机名：{system.get('hostname', 'Unknown')}",
-        f"- 操作系统：{system.get('os', 'Unknown')}",
-        f"- 当前用户：{system.get('current_user', 'Unknown')}",
-        f"- 是否管理员：{system.get('is_admin', False)}",
-        f"- 巡检时间：{results.get('started_at', '')}",
+        f"## {t('legacy.basic')}",
+        f"- {t('legacy.hostname')}：{system.get('hostname', 'Unknown')}",
+        f"- {t('legacy.os')}：{system.get('os', 'Unknown')}",
+        f"- {t('legacy.user')}：{system.get('current_user', 'Unknown')}",
+        f"- {t('legacy.admin')}：{system.get('is_admin', False)}",
+        f"- {t('legacy.time')}：{results.get('started_at', '')}",
         "",
-        "## 2. 总体风险摘要",
+        f"## {t('legacy.summary')}",
         "",
-        "| 等级 | 数量 |",
+        f"| {t('legacy.level')} | {t('legacy.count')} |",
         "|---|---:|",
         *[f"| {severity} | {counts.get(severity, 0)} |" for severity in SEVERITY_ORDER],
         "",
-        f"- 关键发现：{len(findings)}",
+        f"- {t('legacy.key_findings')}：{len(findings)}",
         "",
-        "## 3. 重点风险",
+        f"## {t('legacy.focus')}",
     ])
     if findings:
         for item in findings:
-            _finding_section(lines, item)
+            _finding_section(lines, item, language)
     elif analysis_result.status == "OK":
-        lines.extend(["未发现需要优先展示的风险。", ""])
+        lines.extend([t("legacy.no_findings"), ""])
     else:
-        lines.extend(["风险分析未完整执行，不能据此判断为未发现风险。", ""])
+        lines.extend([t("legacy.incomplete_findings"), ""])
 
-    _section(lines, "4. 系统信息", results.get("system_info"))
-    _section(lines, "5. 用户与权限", results.get("users"))
-    _section(lines, "6. 服务", results.get("services"), limit=20)
-    _section(lines, "7. 网络端口", results.get("network_ports"), limit=50)
-    _section(lines, "8. 计划任务", results.get("scheduled_tasks"), limit=30)
-    _startup_items_section(lines, results.get("startup_items"))
-    _security_vendors_section(lines, results.get("security_vendors"), findings)
-    _firewall_section(lines, results.get("firewall"))
-    _remote_desktop_section(lines, results.get("remote_desktop"))
-    _shares_section(lines, results.get("shares"))
-    _disks_section(lines, results.get("disks"))
+    _section(lines, t("legacy.system_info"), results.get("system_info"))
+    _section(lines, t("legacy.users"), results.get("users"))
+    _section(lines, t("legacy.services"), results.get("services"), limit=20)
+    _section(lines, t("legacy.ports"), results.get("network_ports"), limit=50)
+    _section(lines, t("legacy.tasks"), results.get("scheduled_tasks"), limit=30)
+    _startup_items_section(lines, results.get("startup_items"), language)
+    _security_vendors_section(lines, results.get("security_vendors"), findings, language)
+    _firewall_section(lines, results.get("firewall"), language)
+    _remote_desktop_section(lines, results.get("remote_desktop"), language)
+    _shares_section(lines, results.get("shares"), language)
+    _disks_section(lines, results.get("disks"), language)
     _section(lines, "13. 事件日志摘要", results.get("event_logs"), limit=20)
     lines.extend([
-        "## 14. 原始数据位置",
+        f"## {t('legacy.raw')}",
         f"- `{raw_dir}`",
         "",
-        "## 15. 本次巡检限制与不确定项",
-        "- 本工具只读采集并提示风险，不自动修复。",
-        "- 普通权限下部分信息可能缺失。",
-        "- 端口、账号、计划任务等发现需要结合业务背景人工确认。",
-        "- 报告只展示关键摘要和前若干条明细，完整结构化数据见 raw。",
+        f"## {t('legacy.limitations')}",
+        f"- {t('legacy.readonly')}",
+        f"- {t('legacy.admin_gap')}",
+        f"- {t('legacy.manual_context')}",
+        f"- {t('legacy.raw_detail')}",
         "",
     ])
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    output_path.write_text("\n".join(localize_legacy_report(lines, language)), encoding="utf-8")
 
 
-def _configuration_status_lines(analysis: AnalysisResult) -> list[str]:
+def _configuration_status_lines(analysis: AnalysisResult, language: str = "zh-CN") -> list[str]:
+    t = lambda key: text(key, language)
     evidence = analysis.config_evidence
     labels = (
-        ("Default registry", "default_registry"),
-        ("User override", "user_override"),
-        ("Local profile", "local_profile"),
+        (t("legacy.default_registry"), "default_registry"),
+        (t("legacy.user_override"), "user_override"),
+        (t("legacy.local_profile"), "local_profile"),
     )
-    lines = ["- Configuration:"]
+    lines = [f"- {t('legacy.configuration')}:"]
     for label, key in labels:
         item = evidence.get(key, {})
         status = str(item.get("status") or "not_provided")
@@ -147,27 +154,31 @@ def _configuration_status_lines(analysis: AnalysisResult) -> list[str]:
             detail = " (applied)"
         lines.append(f"  - {label}: {status}{detail}")
     for message in analysis.errors[:5]:
-        lines.append(f"  - Error: {_safe_error_text(message, 180)}")
+        lines.append(f"  - {t('legacy.error')}: {_safe_error_text(message, 180)}")
     if len(analysis.errors) > 5:
-        lines.append(f"  - Additional errors not expanded: {len(analysis.errors) - 5}")
+        lines.append(f"  - {t('legacy.additional_errors').format(count=len(analysis.errors) - 5)}")
     for message in analysis.warnings[:5]:
-        lines.append(f"  - Warning: {_safe_error_text(message, 180)}")
+        lines.append(f"  - {t('legacy.warning')}: {_safe_error_text(message, 180)}")
     return lines
 
 
-def _finding_section(lines: list[str], item: dict[str, Any]) -> None:
-    title = item.get("title") or item.get("name") or "未命名风险"
+def _finding_section(lines: list[str], item: dict[str, Any], language: str = "zh-CN") -> None:
+    t = lambda key: text(key, language)
+    sep = ": " if text("report.title", language).startswith("PC Inspection") else "："
+    item = display_finding(item, language)
+    title = item.get("title") or item.get("name") or t("legacy.not_confirmed")
     severity = _finding_severity(item)
     evidence = item.get("evidence") or item.get("risk") or item.get("发现依据") or ""
 
     lines.append(f"### {title}")
     if item.get("finding_id"):
-        lines.append(f"- Finding ID：{item.get('finding_id')}")
-    lines.append(f"- 风险等级：{severity}")
+        lines.append(f"- {t('legacy.finding_id')}{sep}{item.get('finding_id')}")
+    lines.append(f"- {t('legacy.severity')}{sep}{severity}")
+    lines.append(f"- {t('legacy.severity_meaning')}{sep}{severity_explanation(severity, language)}")
     if item.get("base_severity"):
-        lines.append(f"- 原始风险等级：{normalize_severity(item.get('base_severity'))}")
+        lines.append(f"- {t('legacy.base_severity')}{sep}{normalize_severity(item.get('base_severity'))}")
     if item.get("local_profile_disposition"):
-        lines.append(f"- 本机配置审计注释：{item.get('local_profile_disposition')}")
+        lines.append(f"- {t('legacy.profile_note')}{sep}{item.get('local_profile_disposition')}")
         annotations = item.get("local_profile_annotations")
         if isinstance(annotations, list):
             match_types = sorted({
@@ -176,30 +187,32 @@ def _finding_section(lines: list[str], item: dict[str, Any]) -> None:
                 if isinstance(annotation, dict) and annotation.get("match_type")
             })
             if match_types:
-                lines.append(f"- 本机配置匹配类型：{', '.join(match_types)}")
+                lines.append(f"- {t('legacy.match_type')}{sep}{', '.join(match_types)}")
     if item.get("category"):
-        lines.append(f"- 分类：{item.get('category')}")
+        lines.append(f"- {t('legacy.category')}{sep}{item.get('category')}")
     if item.get("component"):
-        lines.append(f"- 组件：{item.get('component')}")
+        lines.append(f"- {t('legacy.component')}{sep}{item.get('component')}")
     if item.get("description"):
-        lines.append(f"- 描述：{item.get('description')}")
+        lines.append(f"- {t('legacy.description')}{sep}{item.get('description')}")
     lines.extend(_format_evidence(evidence))
     if item.get("precheck"):
-        lines.append(f"- 整改前核查：{item.get('precheck')}")
+        lines.append(f"- {t('legacy.precheck')}{sep}{item.get('precheck')}")
     if item.get("applicability"):
-        lines.append(f"- 适用条件：{item.get('applicability')}")
-    lines.append(f"- 可能影响：{item.get('impact', '未确认')}")
-    lines.append(f"- 建议下一步检查：{item.get('recommendation', '未确认')}")
+        lines.append(f"- {t('legacy.applicability')}{sep}{item.get('applicability')}")
+    if item.get("_locale_source_note"):
+        lines.append(f"- {item['_locale_source_note']}")
+    lines.append(f"- {t('legacy.impact')}{sep}{item.get('impact', t('legacy.not_confirmed'))}")
+    lines.append(f"- {t('legacy.recommendation')}{sep}{item.get('recommendation', t('legacy.not_confirmed'))}")
     if item.get("rollback"):
-        lines.append(f"- 回滚方法：{item.get('rollback')}")
+        lines.append(f"- {t('legacy.rollback')}{sep}{item.get('rollback')}")
     if item.get("verification_checkpoint"):
-        lines.append(f"- 验证检查点：{item.get('verification_checkpoint')}")
+        lines.append(f"- {t('legacy.verification')}{sep}{item.get('verification_checkpoint')}")
     references = item.get("references")
     if isinstance(references, list) and references:
-        lines.append("- 资料来源：" + "；".join(str(source) for source in references))
+        lines.append("- " + t("report.references") + sep + "; ".join(str(source) for source in references))
     if item.get("needs_human_review") is True:
-        lines.append("- 人工复核：需人工确认")
-    lines.append(f"- 是否自动修复：{item.get('auto_fix', '否')}")
+        lines.append("- " + t("legacy.manual_review"))
+    lines.append(f"- {t('legacy.auto_fix')}{sep}{item.get('auto_fix', t('legacy.false'))}")
     lines.append("")
 
 
@@ -273,7 +286,7 @@ def _collector_header(lines: list[str], title: str, result: Any) -> bool:
     return True
 
 
-def _firewall_section(lines: list[str], result: Any) -> None:
+def _firewall_section(lines: list[str], result: Any, language: str = "zh-CN") -> None:
     if not _collector_header(lines, "防火墙状态", result):
         return
     data = _dict(result.get("data"))
@@ -288,18 +301,18 @@ def _firewall_section(lines: list[str], result: Any) -> None:
         for item in profiles:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('Name'))} | {_cell(row.get('Enabled'))} | "
-                f"{_cell(row.get('DefaultInboundAction'))} | {_cell(row.get('DefaultOutboundAction'))} |"
+                f"| {_cell(row.get('Name'), language)} | {_cell(row.get('Enabled'), language)} | "
+                f"{_cell(row.get('DefaultInboundAction'), language)} | {_cell(row.get('DefaultOutboundAction'), language)} |"
             )
     else:
         lines.append("未采集到 Profile 信息，需人工确认。")
     lines.append("")
 
-    _firewall_rules_table(lines, "SMB-In / File and Printer Sharing 相关规则摘要", smb_rules)
-    _firewall_rules_table(lines, "Remote Desktop 相关规则摘要", rdp_rules)
+    _firewall_rules_table(lines, "SMB-In / File and Printer Sharing 相关规则摘要", smb_rules, language)
+    _firewall_rules_table(lines, "Remote Desktop 相关规则摘要", rdp_rules, language)
 
 
-def _remote_desktop_section(lines: list[str], result: Any) -> None:
+def _remote_desktop_section(lines: list[str], result: Any, language: str = "zh-CN") -> None:
     if not _collector_header(lines, "远程桌面状态", result):
         return
     data = _dict(result.get("data"))
@@ -308,13 +321,13 @@ def _remote_desktop_section(lines: list[str], result: Any) -> None:
     listeners = _as_list(data.get("Listeners"))
     rules = _as_list(data.get("FirewallRules"))
 
-    enabled = settings.get("RemoteDesktopEnabled", "未确认")
-    port = settings.get("PortNumber", "未确认")
+    enabled = settings.get("RemoteDesktopEnabled")
+    port = settings.get("PortNumber")
     lines.extend([
-        f"- Remote Desktop 是否启用：{_value(enabled)}",
-        f"- RDP 端口：{_value(port)}",
-        f"- TermService 状态：{_value(service.get('Status'))}",
-        f"- TermService 启动类型：{_value(service.get('StartType'))}",
+        f"- Remote Desktop 是否启用：{_value(enabled, language)}",
+        f"- RDP 端口：{_value(port, language)}",
+        f"- TermService 状态：{_value(service.get('Status'), language)}",
+        f"- TermService 启动类型：{_value(service.get('StartType'), language)}",
         f"- RDP 端口监听数量：{len(listeners)}",
         "",
     ])
@@ -326,18 +339,18 @@ def _remote_desktop_section(lines: list[str], result: Any) -> None:
         for item in listeners[:MAX_DETAIL_ROWS]:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('LocalAddress'))} | {_cell(row.get('LocalPort'))} | "
-                f"{_cell(row.get('ProcessName'))} | {_cell(row.get('OwningProcess'))} |"
+                f"| {_cell(row.get('LocalAddress'), language)} | {_cell(row.get('LocalPort'), language)} | "
+                f"{_cell(row.get('ProcessName'), language)} | {_cell(row.get('OwningProcess'), language)} |"
             )
         if len(listeners) > MAX_DETAIL_ROWS:
             lines.append(f"- 仅展示前 {MAX_DETAIL_ROWS} 条，完整数据见 raw。")
     else:
-        lines.append("- RDP 监听：未发现或未采集到，需结合防火墙和服务状态人工确认。")
+        lines.append(f"- {text('legacy.rdp_listener_label', language)}: {text('legacy.rdp_listener_not_found', language)}")
     lines.append("")
-    _firewall_rules_table(lines, "Remote Desktop 防火墙规则摘要", rules)
+    _firewall_rules_table(lines, "Remote Desktop 防火墙规则摘要", rules, language)
 
 
-def _shares_section(lines: list[str], result: Any) -> None:
+def _shares_section(lines: list[str], result: Any, language: str = "zh-CN") -> None:
     if not _collector_header(lines, "共享目录", result):
         return
     data = _dict(result.get("data"))
@@ -350,8 +363,8 @@ def _shares_section(lines: list[str], result: Any) -> None:
         f"- 共享数量：{len(shares)}",
         f"- 默认管理共享数量：{default_count}",
         f"- 非默认共享数量：{non_default_count}",
-        f"- Everyone / Guest / Anonymous 权限线索：{'发现，需人工确认' if broad else '未发现'}",
-        f"- 是否使用 fallback：{_value(data.get('UsedFallback'))}",
+        f"- Everyone / Guest / Anonymous 权限线索：{text('legacy.broad_access_found', language) if broad else text('legacy.no_broad_access', language)}",
+        f"- 是否使用 fallback：{_value(data.get('UsedFallback'), language)}",
         "",
     ])
 
@@ -362,8 +375,8 @@ def _shares_section(lines: list[str], result: Any) -> None:
         for item in shares[:MAX_DETAIL_ROWS]:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('Name'))} | {_cell(row.get('Path'))} | {_cell(row.get('ShareType'))} | "
-                f"{_cell(row.get('IsDefaultAdminShare'))} | {_cell(row.get('BroadAccessAccounts') or '无')} |"
+                f"| {_cell(row.get('Name'), language)} | {_cell(row.get('Path'), language)} | {_cell(row.get('ShareType'), language)} | "
+                f"{_cell(row.get('IsDefaultAdminShare'), language)} | {_cell(row.get('BroadAccessAccounts') or '无', language)} |"
             )
         if len(shares) > MAX_DETAIL_ROWS:
             lines.append(f"- 仅展示前 {MAX_DETAIL_ROWS} 条，完整数据见 raw。")
@@ -372,7 +385,7 @@ def _shares_section(lines: list[str], result: Any) -> None:
     lines.append("")
 
 
-def _disks_section(lines: list[str], result: Any) -> None:
+def _disks_section(lines: list[str], result: Any, language: str = "zh-CN") -> None:
     if not _collector_header(lines, "磁盘与卷", result):
         return
     data = _dict(result.get("data"))
@@ -388,8 +401,8 @@ def _disks_section(lines: list[str], result: Any) -> None:
         for item in volumes[:MAX_DETAIL_ROWS]:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('Drive'))} | {_cell(row.get('FileSystem'))} | {_cell(_bytes(row.get('Size')))} | "
-                f"{_cell(_bytes(row.get('Free')))} | {_cell(_percent(row.get('FreePercent')))} | {_cell(row.get('Status'))} |"
+                f"| {_cell(row.get('Drive'), language)} | {_cell(row.get('FileSystem'), language)} | {_cell(_bytes(row.get('Size')), language)} | "
+                f"{_cell(_bytes(row.get('Free')), language)} | {_cell(_percent(row.get('FreePercent')), language)} | {_cell(row.get('Status'), language)} |"
             )
         if len(volumes) > MAX_DETAIL_ROWS:
             lines.append(f"- 仅展示前 {MAX_DETAIL_ROWS} 条，完整数据见 raw。")
@@ -404,9 +417,9 @@ def _disks_section(lines: list[str], result: Any) -> None:
         for item in physical[:MAX_DETAIL_ROWS]:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('FriendlyName') or row.get('Model'))} | {_cell(row.get('MediaType'))} | "
-                f"{_cell(row.get('BusType') or row.get('InterfaceType'))} | {_cell(_bytes(row.get('Size')))} | "
-                f"{_cell(row.get('HealthStatus') or row.get('Status'))} | {_cell(row.get('OperationalStatus'))} |"
+                f"| {_cell(row.get('FriendlyName') or row.get('Model'), language)} | {_cell(row.get('MediaType'), language)} | "
+                f"{_cell(row.get('BusType') or row.get('InterfaceType'), language)} | {_cell(_bytes(row.get('Size')), language)} | "
+                f"{_cell(row.get('HealthStatus') or row.get('Status'), language)} | {_cell(row.get('OperationalStatus'), language)} |"
             )
     else:
         lines.append("未采集到物理磁盘健康状态，需人工确认。")
@@ -421,9 +434,9 @@ def _disks_section(lines: list[str], result: Any) -> None:
         for item in bitlocker[:MAX_DETAIL_ROWS]:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('MountPoint'))} | {_cell(row.get('VolumeStatus'))} | "
-                f"{_cell(row.get('ProtectionStatus'))} | {_cell(row.get('LockStatus'))} | "
-                f"{_cell(_percent(row.get('EncryptionPercentage')))} |"
+                f"| {_cell(row.get('MountPoint'), language)} | {_cell(row.get('VolumeStatus'), language)} | "
+                f"{_cell(row.get('ProtectionStatus'), language)} | {_cell(row.get('LockStatus'), language)} | "
+                f"{_cell(_percent(row.get('EncryptionPercentage')), language)} |"
             )
     else:
         lines.append("未采集到 BitLocker 信息，可能为不支持、未启用或权限不足。")
@@ -435,7 +448,7 @@ def _disks_section(lines: list[str], result: Any) -> None:
     lines.append("")
 
 
-def _startup_items_section(lines: list[str], result: Any) -> None:
+def _startup_items_section(lines: list[str], result: Any, language: str = "zh-CN") -> None:
     if not _collector_header(lines, "启动项", result):
         return
     data = _dict(result.get("data"))
@@ -454,8 +467,8 @@ def _startup_items_section(lines: list[str], result: Any) -> None:
         for item in items[:MAX_DETAIL_ROWS]:
             row = _dict(item)
             lines.append(
-                f"| {_cell(row.get('Name'))} | {_cell(row.get('Scope'))} | {_cell(row.get('SourceType'))} | "
-                f"{_cell(_short(row.get('Command'), 160))} |"
+                f"| {_cell(row.get('Name'), language)} | {_cell(row.get('Scope'), language)} | {_cell(row.get('SourceType'), language)} | "
+                f"{_cell(_short(row.get('Command'), 160, language), language)} |"
             )
         if len(items) > MAX_DETAIL_ROWS:
             lines.append(f"- 仅展示前 {MAX_DETAIL_ROWS} 条，完整数据见 raw。")
@@ -468,6 +481,7 @@ def _security_vendors_section(
     lines: list[str],
     result: Any,
     findings: list[dict[str, Any]],
+    language: str = "zh-CN",
 ) -> None:
     lines.extend([
         "## 安全软件与电脑管家组件",
@@ -495,11 +509,11 @@ def _security_vendors_section(
     status = str(result.get("status") or "").casefold()
     status_label = {
         "ok": "OK",
-        "partial": "部分完成",
-        "need_admin": "需要管理员权限",
-        "skipped": "已跳过",
-        "failed": "采集失败",
-    }.get(status, "未确认")
+        "partial": text("legacy.partial", language),
+        "need_admin": text("legacy.need_admin", language),
+        "skipped": text("legacy.skipped", language),
+        "failed": text("legacy.collect_failed", language),
+    }.get(status, text("legacy.not_confirmed", language))
 
     if status == "ok" and not grouped and not vendor_findings:
         lines.extend([
@@ -519,12 +533,12 @@ def _security_vendors_section(
     lines.extend([
         "| 项目 | 结果 |",
         "|---|---|",
-        f"| 采集状态 | {_cell(status_label)} |",
-        f"| 检测到的厂商 | {_cell('、'.join(vendor_names) or '未检测到')} |",
-        f"| 已安装厂商数量 | {_cell(summary.get('installed_vendor_count', len(installed_vendors)))} |",
+        f"| 采集状态 | {_cell(status_label, language)} |",
+        f"| 检测到的厂商 | {_cell('、'.join(vendor_names) or text('legacy.not_detected', language), language)} |",
+        f"| 已安装厂商数量 | {_cell(summary.get('installed_vendor_count', len(installed_vendors)), language)} |",
         f"| 已安装程序数量 | {len(installed)} |",
-        f"| 相关驱动数量 | {_cell(summary.get('driver_count', len(drivers)))} |",
-        f"| 相关目录数量 | {_cell(summary.get('directory_count', len(directories)))} |",
+        f"| 相关驱动数量 | {_cell(summary.get('driver_count', len(drivers)), language)} |",
+        f"| 相关目录数量 | {_cell(summary.get('directory_count', len(directories)), language)} |",
         f"| 需人工复核 | {review_count} |",
         "",
     ])
@@ -570,9 +584,9 @@ def _security_vendors_section(
             "- 说明：检测到软件存在不等于恶意，所有线索均需结合用户用途人工确认。",
             "",
         ])
-        _security_vendor_installed_table(lines, installed_items)
-        _security_vendor_driver_table(lines, driver_items)
-        _security_vendor_directory_table(lines, directory_items)
+        _security_vendor_installed_table(lines, installed_items, language)
+        _security_vendor_driver_table(lines, driver_items, language)
+        _security_vendor_directory_table(lines, directory_items, language)
         _security_vendor_finding_summary(lines, finding_items)
 
 
@@ -617,7 +631,7 @@ def _group_security_vendor_report_items(
     return grouped
 
 
-def _security_vendor_installed_table(lines: list[str], items: list[dict[str, Any]]) -> None:
+def _security_vendor_installed_table(lines: list[str], items: list[dict[str, Any]], language: str = "zh-CN") -> None:
     if not items:
         return
     lines.extend([
@@ -628,15 +642,15 @@ def _security_vendor_installed_table(lines: list[str], items: list[dict[str, Any
     ])
     for item in items[:SECURITY_VENDOR_DETAIL_LIMIT]:
         lines.append(
-            f"| {_cell(item.get('display_name'))} | {_cell(item.get('display_version'))} | "
-            f"{_cell(item.get('publisher'))} | {_cell(item.get('install_location'))} | "
-            f"{_cell(item.get('matched_vendor'))} | {_cell(item.get('matched_keyword'))} |"
+            f"| {_cell(item.get('display_name'), language)} | {_cell(item.get('display_version'), language)} | "
+            f"{_cell(item.get('publisher'), language)} | {_cell(item.get('install_location'), language)} | "
+            f"{_cell(item.get('matched_vendor'), language)} | {_cell(item.get('matched_keyword'), language)} |"
         )
     _security_vendor_overflow(lines, len(items))
     lines.append("")
 
 
-def _security_vendor_driver_table(lines: list[str], items: list[dict[str, Any]]) -> None:
+def _security_vendor_driver_table(lines: list[str], items: list[dict[str, Any]], language: str = "zh-CN") -> None:
     if not items:
         return
     lines.extend([
@@ -649,15 +663,15 @@ def _security_vendor_driver_table(lines: list[str], items: list[dict[str, Any]])
     ])
     for item in items[:SECURITY_VENDOR_DETAIL_LIMIT]:
         lines.append(
-            f"| {_cell(item.get('name'))} | {_cell(item.get('display_name'))} | {_cell(item.get('state'))} | "
-            f"{_cell(item.get('start_mode'))} | {_cell(item.get('path_name'))} | "
-            f"{_cell(item.get('matched_vendor'))} |"
+            f"| {_cell(item.get('name'), language)} | {_cell(item.get('display_name'), language)} | {_cell(item.get('state'), language)} | "
+            f"{_cell(item.get('start_mode'), language)} | {_cell(item.get('path_name'), language)} | "
+            f"{_cell(item.get('matched_vendor'), language)} |"
         )
     _security_vendor_overflow(lines, len(items))
     lines.append("")
 
 
-def _security_vendor_directory_table(lines: list[str], items: list[dict[str, Any]]) -> None:
+def _security_vendor_directory_table(lines: list[str], items: list[dict[str, Any]], language: str = "zh-CN") -> None:
     if not items:
         return
     lines.extend([
@@ -670,8 +684,8 @@ def _security_vendor_directory_table(lines: list[str], items: list[dict[str, Any
     ])
     for item in items[:SECURITY_VENDOR_DETAIL_LIMIT]:
         lines.append(
-            f"| {_cell(item.get('path'))} | {_cell(item.get('matched_vendor'))} | "
-            f"{_cell(item.get('matched_keyword'))} |"
+            f"| {_cell(item.get('path'), language)} | {_cell(item.get('matched_vendor'), language)} | "
+            f"{_cell(item.get('matched_keyword'), language)} |"
         )
     _security_vendor_overflow(lines, len(items))
     lines.append("")
@@ -735,7 +749,7 @@ def _heading(value: Any) -> str:
     return _value(value).replace("\r", " ").replace("\n", " ").replace("#", "").strip()
 
 
-def _firewall_rules_table(lines: list[str], title: str, rules: list[Any]) -> None:
+def _firewall_rules_table(lines: list[str], title: str, rules: list[Any], language: str = "zh-CN") -> None:
     lines.append(f"### {title}")
     if not rules:
         lines.extend(["未采集到相关规则，需人工确认。", ""])
@@ -745,9 +759,9 @@ def _firewall_rules_table(lines: list[str], title: str, rules: list[Any]) -> Non
     for item in rules[:MAX_DETAIL_ROWS]:
         row = _dict(item)
         lines.append(
-            f"| {_cell(row.get('DisplayName') or row.get('Name'))} | {_cell(row.get('Enabled'))} | "
-            f"{_cell(row.get('Direction'))} | {_cell(row.get('Action'))} | {_cell(row.get('Profile'))} | "
-            f"{_cell(row.get('Ports'))} |"
+            f"| {_cell(row.get('DisplayName') or row.get('Name'), language)} | {_cell(row.get('Enabled'), language)} | "
+            f"{_cell(row.get('Direction'), language)} | {_cell(row.get('Action'), language)} | {_cell(row.get('Profile'), language)} | "
+            f"{_cell(row.get('Ports'), language)} |"
         )
     if len(rules) > MAX_DETAIL_ROWS:
         lines.append(f"- 仅展示前 {MAX_DETAIL_ROWS} 条，完整数据见 raw。")
@@ -771,27 +785,27 @@ def _as_list(value: Any) -> list[Any]:
     return [value]
 
 
-def _value(value: Any) -> str:
+def _value(value: Any, language: str = "zh-CN") -> str:
     if value is None or value == "":
-        return "未确认"
+        return text("legacy.not_confirmed", language)
     return str(value)
 
 
-def _cell(value: Any) -> str:
-    text = _value(value).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
-    return text
+def _cell(value: Any, language: str = "zh-CN") -> str:
+    rendered = _value(value, language).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+    return rendered
 
 
-def _short(value: Any, limit: int) -> str:
-    text = _value(value)
-    return text[:limit] + ("..." if len(text) > limit else "")
+def _short(value: Any, limit: int, language: str = "zh-CN") -> str:
+    rendered = _value(value, language)
+    return rendered[:limit] + ("..." if len(rendered) > limit else "")
 
 
-def _bytes(value: Any) -> str:
+def _bytes(value: Any) -> str | None:
     try:
         size = float(value)
     except (TypeError, ValueError):
-        return "未确认"
+        return None
     units = ["B", "KB", "MB", "GB", "TB", "PB"]
     idx = 0
     while size >= 1024 and idx < len(units) - 1:
@@ -800,9 +814,9 @@ def _bytes(value: Any) -> str:
     return f"{size:.1f} {units[idx]}"
 
 
-def _percent(value: Any) -> str:
+def _percent(value: Any) -> str | None:
     if value is None or value == "":
-        return "未确认"
+        return None
     try:
         return f"{float(value):.2f}%"
     except (TypeError, ValueError):

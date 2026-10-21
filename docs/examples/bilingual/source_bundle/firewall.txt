@@ -1,0 +1,1 @@
+SyntheticFact=仅供离线报告示例

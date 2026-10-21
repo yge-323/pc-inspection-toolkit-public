@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import csv as csv_module
+import io
 import json
 import platform
 import sys
@@ -182,7 +184,15 @@ def test_offline_bundle_analysis_uses_the_same_windows_security_rules() -> None:
     markdown = render_markdown(offline, metadata)
     assert "整改前核查" in html and "回滚" in html and "复查" in html
     assert "密码复杂度" in html
-    assert "precheck" in csv and "references" in csv
+    rows = list(csv_module.reader(io.StringIO(csv)))
+    headers = rows[0]
+    from locales.findings import text
+    assert headers[10] == text("report.precheck", "zh-CN")
+    assert headers[17] == text("report.references", "zh-CN")
+    finding_id_index = headers.index(text("report.finding_id", "zh-CN"))
+    row_type_index = headers.index("row_type")
+    assert any(row[row_type_index] == "finding" and row[finding_id_index] == "WIN_DISK_LOW_SPACE:C:"
+               for row in rows[2:])
     assert "整改前核查" in markdown and "资料来源" in markdown
     assert "https" in markdown and "learn" in markdown
 

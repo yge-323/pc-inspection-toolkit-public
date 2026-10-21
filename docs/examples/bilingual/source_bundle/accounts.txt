@@ -1,0 +1,2 @@
+COLLECTOR_STATUS=PARTIAL
+SyntheticFact=合成样例：管理员成员数未采集，需获批人员复核

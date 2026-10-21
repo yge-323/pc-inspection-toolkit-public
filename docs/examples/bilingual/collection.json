@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-10-20T00:00:00+00:00",
+  "finished_at": "2026-10-20T00:01:00+00:00",
+  "timezone": "UTC",
+  "privilege": "ordinary",
+  "collector_version": "synthetic-demo-1",
+  "command_catalog": "static-synthetic-fixture"
+}

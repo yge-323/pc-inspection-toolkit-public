@@ -3,3 +3,5 @@
 rules/*.json text eol=lf
 *.vbs text eol=crlf
 *.cmd text eol=crlf
+docs/examples/bilingual/source_bundle/** -text whitespace=cr-at-eol
+docs/examples/bilingual/reports/** -text whitespace=cr-at-eol

@@ -6,11 +6,11 @@
 
 PC Inspection Toolkit 是供获授权维护工作使用的只读巡检与离线证据分析工具，用于展示采集事实、确定性发现、证据缺口和人工核查步骤。它不会自动整改系统或提权。
 
-桌面 GUI 使用中文。
+桌面 GUI 支持简体中文和 English。默认打开简体中文，并按当前 Windows 用户保存界面语言偏好。
 
 ## 预览界面
 
-以下截图来自真实 Windows 桌面应用；截图中的路径为合成示例。
+以下是原有的简体中文 Windows 桌面应用预览图；截图中的路径为合成示例。
 
 ![巡检概览](docs/assets/preview-overview.png)
 
@@ -18,9 +18,35 @@ PC Inspection Toolkit 是供获授权维护工作使用的只读巡检与离线�
 
 ![证据导入](docs/assets/preview-evidence-import.png)
 
+## 界面与报告语言
+
+可在顶部选择“简体中文”或“English”。界面语言保存在当前 Windows 用户的应用偏好中。“分析与报告”页面的报告语言可跟随界面，也可单独选择中文或英文；切换界面不会重置该选择。
+
+CLI 不读取 GUI 偏好，默认使用中文。使用 `--lang` 选择 CLI 提示语言，使用 `--report-lang` 单独选择报告语言；省略 `--report-lang` 时报告跟随 `--lang`。Markdown、HTML、CSV 报告文字会随语言切换，机器可读的 `analysis.json` 保持不变。内置 Finding 和整改说明提供中英文；自定义规则、原始证据、路径及非工具自有短语诊断保留来源文本。
+
+以下双语截图来自 Windows 源码 GUI，展示合成路径和示例分析数据。
+
+### 简体中文
+
+![中文概览](docs/assets/bilingual-zh-overview.jpg)
+
+![中文本机巡检](docs/assets/bilingual-zh-local.jpg)
+
+![中文分析与报告](docs/assets/bilingual-zh-report.jpg)
+
+### English
+
+![English overview](docs/assets/bilingual-en-overview.jpg)
+
+![English local inspection](docs/assets/bilingual-en-local.jpg)
+
+![English analysis and reports](docs/assets/bilingual-en-report.jpg)
+
+可查看[可复现的双语合成报告示例](docs/examples/bilingual/README.md)，其中包含两种语言的报告及封存输入证据包。
+
 ## 当前源码能力
 
-- 中文 Windows 桌面向导：经明确授权后，对当前电脑进行只读采集或导入证据。桌面 GUI 已在 Windows 环境开发和验证；这不代表干净机器或管理员权限验收通过。
+- 简体中文和 English Windows 桌面向导：经明确授权后，对当前电脑进行只读采集或导入证据。桌面 GUI 已在 Windows 环境开发和验证；这不代表干净机器或管理员权限验收通过。
 - 导入并离线分析通过校验的 Windows 和 POSIX 证据包，明确显示 `OK`、`PARTIAL` 或 `FAILED`。
 - POSIX Shell 采集及 SecureCRT / 4A 粘贴导入：仅用于已经授权的会话；工具本身不会连接这些目标。
 - 生成 HTML、Markdown、CSV、JSON 报告；支持分析比较和 Codex 脱敏交付。
@@ -51,7 +77,7 @@ python --version
 python -c "import tkinter as tk; root=tk.Tk(); print('Tk', root.tk.call('info','patchlevel')); root.destroy()"
 ```
 
-启动中文桌面向导。打开界面不会启动采集：
+启动桌面向导。界面会记住已选语言；打开界面不会启动采集：
 
 ```powershell
 python -B .\desktop_launcher.py

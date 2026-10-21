@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from models.analysis import AnalysisResult
+from locales import display_finding, display_reason, display_summary, text, validate_resources
+from locales.findings import gap_text, severity_display, severity_explanation
 
 
 def _safe(value: Any) -> str:
@@ -23,117 +25,130 @@ def _md(value: Any) -> str:
     return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _support_summary(result: AnalysisResult) -> tuple[str, str]:
+def _support_summary(result: AnalysisResult, language: str = "zh-CN") -> tuple[str, str]:
     lifecycle = result.config_evidence.get("os_lifecycle", {})
     if not isinstance(lifecycle, dict) or lifecycle.get("status") != "loaded":
-        return "生命周期规则不可用/未核实", ""
+        return text("support.unavailable", language), ""
     finding = next((item for item in result.findings if item.get("rule_id") == "OS_LIFECYCLE_REVIEW" and isinstance(item.get("evidence"), dict)), None)
     if not finding:
         if any("OS_LIFECYCLE_COVERAGE_UNSUPPORTED" in warning or "OS_LIFECYCLE_RECORD_UNAVAILABLE" in warning for warning in result.warnings):
-            return "版本覆盖未知，需人工核实", ""
-        return "未匹配已核实生命周期记录；不代表仍受支持", ""
+            return text("support.unknown_coverage", language), ""
+        return text("support.unmatched", language), ""
     evidence = finding["evidence"]
-    status = "常规支持已结束" if evidence.get("support_status") == "ended" else "生命周期状态需人工核实"
+    status = text("support.ended" if evidence.get("support_status") == "ended" else "support.review", language)
     sources = evidence.get("sources", [])
     source_text = "; ".join(x for x in sources if isinstance(x, str)) if isinstance(sources, list) else ""
     return status, source_text
 
 
-def render_markdown(result: AnalysisResult, metadata: dict[str, Any]) -> str:
-    lines = ["# PC 巡检证据分析报告", "", f"- 分析状态：**{result.status}**",
-             f"- 资产代号：{_md(metadata.get('asset_alias'))}", f"- 证据包：{_md(metadata.get('bundle_id'))}",
-             f"- 目标：{_md(metadata.get('target'))}", "",
-             "证据均视为不可信输入。SHA-256 只能检查封装后的字节是否变化，不能证明来源真实性。", "",
-             "## 平台支持状态", ""]
-    support_status, support_source = _support_summary(result)
-    lines.append(f"- 状态：{_md(support_status)}")
-    lines.append(f"- 来源：{_md(support_source or '未匹配到准确版本的生命周期来源')}")
-    lines.extend(["", "## 硬件与采集摘要", ""])
-    summary = metadata.get("evidence_summary", {})
+def render_markdown(result: AnalysisResult, metadata: dict[str, Any], language: str = "zh-CN") -> str:
+    validate_resources()
+    t = lambda key: text(key, language)
+    sep = ": " if t("report.title").startswith("PC Inspection") else "："
+    lines = [f"# {t('report.title')}", "", f"- {t('report.analysis_status')}{sep}**{result.status}**",
+             f"- {t('report.asset_alias')}{sep}{_md(metadata.get('asset_alias'))}", f"- {t('report.bundle')}{sep}{_md(metadata.get('bundle_id'))}",
+             f"- {t('report.target')}{sep}{_md(metadata.get('target'))}", "", t("report.untrusted"), "",
+             f"## {t('report.platform_support')}", ""]
+    support_status, support_source = _support_summary(result, language)
+    lines.append(f"- {t('report.status')}{sep}{_md(support_status)}")
+    lines.append(f"- {t('report.references')}{sep}{_md(support_source or t('report.no_source'))}")
+    lines.extend(["", f"## {t('report.hardware')}", ""])
+    summary = display_summary(metadata.get("evidence_summary", {}), language)
     if isinstance(summary, dict):
         for group, facts in summary.items():
             if isinstance(facts, dict):
                 lines.append(f"- **{_md(group)}:** " + "; ".join(f"{_md(k)}={_md(v)}" for k, v in facts.items()))
-    lines.extend(["", "## 证据覆盖", "", "| 项目 | 状态 | 退出码 | 说明 |", "|---|---|---:|---|"])
+    lines.extend(["", f"## {t('report.coverage')}", "", f"| {t('report.item')} | {t('report.status')} | {t('report.exit_code')} | {t('report.reason')} |", "|---|---|---:|---|"])
     evidence_rows = metadata.get("evidence_items", [])
     for item in evidence_rows if isinstance(evidence_rows, list) else []:
         if isinstance(item, dict):
-            lines.append(f"| {_md(item.get('name'))} | {_md(item.get('status'))} | {_md(item.get('exit_code'))} | {_md(item.get('reason'))} |")
-    lines.extend(["", "## 风险发现与整改", ""])
+            lines.append(f"| {_md(item.get('name'))} | {_md(item.get('status'))} | {_md(item.get('exit_code'))} | {_md(gap_text(item.get('reason'), language))} |")
+    lines.extend(["", f"## {t('report.findings')}", ""])
     if not result.findings:
-        lines.append("没有生成确定性发现；未检查范围不代表安全。")
+        lines.append(t("analysis.no_findings"))
     for finding in result.findings:
-        lines.extend([f"### {_md(finding.get('title'))}", f"- 编号：{_md(finding.get('finding_id'))}",
-                      f"- 等级：{_md(finding.get('severity'))}", f"- 证据：{_md(json.dumps(finding.get('evidence', {}), ensure_ascii=False))}",
-                      f"- 整改前核查：{_md(finding.get('precheck', '实施前核对影响范围、维护窗口与备份'))}",
-                      f"- 适用版本：{_md(finding.get('applicability', '平台/版本未核实'))}",
-                      f"- 影响与条件：{_md(finding.get('impact', '需要人工复核'))}",
-                      f"- 整改步骤：{_md(finding.get('recommendation', '补充证据并人工检查'))}",
-                      f"- 回滚：{_md(finding.get('rollback', '未修改系统；获批变更前保留原始配置'))}",
-                      f"- 复查：{_md(finding.get('verification_checkpoint', '重新采集并比较证据'))}",
-                      f"- 资料来源：{_md('; '.join(str(value) for value in finding.get('references', [])) if isinstance(finding.get('references'), list) else finding.get('references', ''))}", ""])
+        item = display_finding(finding, language)
+        fields = (("report.finding_id", finding.get("finding_id")), ("report.severity", severity_display(finding.get("severity"), language)), ("report.severity_meaning", severity_explanation(finding.get("severity"), language)), ("report.evidence", json.dumps(finding.get("evidence", {}), ensure_ascii=False)),
+                  ("report.precheck", item.get("precheck", t("report.fallback_precheck"))), ("report.applicability", item.get("applicability", t("report.fallback_applicability"))),
+                  ("report.impact", item.get("impact", t("report.fallback_impact"))), ("report.recommendation", item.get("recommendation", t("report.fallback_recommendation"))),
+                  ("report.rollback", item.get("rollback", t("report.fallback_rollback"))), ("report.verification", item.get("verification_checkpoint", t("report.fallback_verification"))))
+        lines.append(f"### {_md(item.get('title'))}")
+        if item.get("_locale_source_note"):
+            lines.append(f"- {_md(item['_locale_source_note'])}")
+        if item.get("description"):
+            lines.append(f"- {_md(t('legacy.description'))}{sep}{_md(item['description'])}")
+        lines.extend(f"- {t(label)}{sep}{_md(value)}" for label, value in fields)
+        references = finding.get("references", [])
+        lines.append(f"- {t('report.references')}{sep}{_md('; '.join(str(value) for value in references) if isinstance(references, list) else references)}".rstrip())
+        lines.append("")
     if result.status != "OK":
-        lines.extend(["## 证据缺口", "", "分析不完整；缺失证据不代表未发现风险。", *[f"- {_md(x)}" for x in result.warnings + result.errors], ""])
+        lines.extend([f"## {t('report.gaps')}", "", t("analysis.incomplete"), *[f"- {_md(gap_text(x, language))}" for x in result.warnings + result.errors], ""])
     advisory = metadata.get("ai_advisory")
     if isinstance(advisory, dict):
-        lines.extend(["## AI辅助建议（非正式结论）", "", f"- 状态：{_md(advisory.get('status'))}",
-                      "- AI文本与确定性发现分开；不会改变分析状态或风险等级。"])
+        lines.extend([f"## {t('report.ai')}", "", f"- {t('report.status')}：{_md(advisory.get('status'))}", f"- {t('report.ai_separation')}"])
         if advisory.get("reason"):
-            lines.append(f"- 原因：{_md(advisory['reason'])}")
+            lines.append(f"- {t('report.ai_reason')}：{_md(display_reason(advisory['reason'], language))}")
         for suggestion in advisory.get("suggestions", []) if isinstance(advisory.get("suggestions"), list) else []:
             if isinstance(suggestion, dict):
-                lines.append(f"- {_md(suggestion.get('text'))}（引用：{_md(', '.join(suggestion.get('evidence_refs', [])))}）")
+                lines.append(f"- {_md(suggestion.get('text'))}（{t('report.ai_refs')}：{_md(', '.join(suggestion.get('evidence_refs', [])))}）")
         lines.append("")
     return "\n".join(lines)
 
 
-def render_html(result: AnalysisResult, metadata: dict[str, Any]) -> str:
-    support_status, support_source = _support_summary(result)
+def render_html(result: AnalysisResult, metadata: dict[str, Any], language: str = "zh-CN") -> str:
+    validate_resources()
+    t = lambda key: text(key, language)
+    support_status, support_source = _support_summary(result, language)
     rows = []
     for item in result.findings:
-        defaults = {"applicability": "版本/适用条件需人工核实", "impact": "实施前评估服务影响及变更窗口",
-                    "recommendation": "依据证据核实配置后，由获批人员实施变更",
-                    "rollback": "本工具未修改系统；获批变更前备份原配置并准备恢复步骤",
-                    "verification_checkpoint": "按同一规则版本重新采集并人工复核"}
-        cells = [item.get(k, defaults.get(k, "未提供")) for k in
-                 ("finding_id", "title", "severity", "evidence", "precheck", "applicability",
-                  "impact", "recommendation", "rollback", "verification_checkpoint", "references")]
+        display = display_finding(item, language)
+        cells = [item.get("finding_id"), display.get("title"), severity_display(item.get("severity"), language), severity_explanation(item.get("severity"), language), display.get("description", ""), item.get("evidence"),
+                 display.get("precheck", t("report.fallback_precheck")), display.get("applicability", t("report.fallback_applicability")),
+                 display.get("impact", t("report.fallback_impact")), display.get("recommendation", t("report.fallback_recommendation")),
+                 display.get("rollback", t("report.fallback_rollback")), display.get("verification_checkpoint", t("report.fallback_verification")), item.get("references"), display.get("_locale_source_note", "")]
         rows.append("<tr>" + "".join(f"<td>{html.escape(_safe(json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v))}</td>" for v in cells) + "</tr>")
-    warnings = "".join(f"<li>{html.escape(_safe(v))}</li>" for v in result.warnings + result.errors)
+    warnings = "".join(f"<li>{html.escape(_safe(gap_text(v, language)))}</li>" for v in result.warnings + result.errors)
     summary_html = ""
-    summary = metadata.get("evidence_summary", {})
+    summary = display_summary(metadata.get("evidence_summary", {}), language)
     if isinstance(summary, dict):
         summary_html = "<ul>" + "".join(f"<li><strong>{html.escape(_safe(group))}:</strong> " + html.escape("; ".join(f"{k}={v}" for k, v in facts.items())) + "</li>" for group, facts in summary.items() if isinstance(facts, dict)) + "</ul>"
-    coverage_html = "".join(f"<tr><td>{html.escape(_safe(x.get('name')))}</td><td>{html.escape(_safe(x.get('status')))}</td><td>{html.escape(_safe(x.get('exit_code')))}</td><td>{html.escape(_safe(x.get('reason')))}</td></tr>" for x in metadata.get("evidence_items", []) if isinstance(x, dict))
-    return ("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>巡检证据分析报告</title>"
+    coverage_html = "".join(f"<tr><td>{html.escape(_safe(x.get('name')))}</td><td>{html.escape(_safe(x.get('status')))}</td><td>{html.escape(_safe(x.get('exit_code')))}</td><td>{html.escape(_safe(gap_text(x.get('reason'), language)))}</td></tr>" for x in metadata.get("evidence_items", []) if isinstance(x, dict))
+    language_tag = "zh-CN" if text("report.title", language).startswith("PC 巡检") else "en-US"
+    labels = [t(k) for k in ("report.finding_id", "report.finding_title", "report.severity", "report.severity_meaning", "report.description", "report.evidence", "report.precheck", "report.applicability", "report.impact", "report.recommendation", "report.rollback", "report.verification", "report.references")]
+    return (f"<!doctype html><html lang=\"{language_tag}\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{html.escape(t('report.title'))}</title>"
             "<style>body{font:16px system-ui,sans-serif;max-width:1200px;margin:2rem auto;padding:0 1rem}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #bbb;padding:.5rem;text-align:left;overflow-wrap:anywhere;white-space:pre-wrap;vertical-align:top}th{background:#eee}.status{font-weight:bold}</style><body>"
-            f"<h1>PC 巡检证据分析报告</h1><p class=\"status\">分析状态：{html.escape(result.status)}</p><p>资产代号：{html.escape(_safe(metadata.get('asset_alias')))} · Bundle：{html.escape(_safe(metadata.get('bundle_id')))}</p>"
-            + "<p>证据包内容均按不可信输入处理。SHA-256 只校验封装后的字节一致性，不证明来源真实性。</p>"
-            + f"<h2>平台支持状态</h2><p>{html.escape(_safe(support_status))} · {html.escape(_safe(support_source or '未匹配到准确版本来源'))}</p><h2>硬件与采集摘要</h2>" + summary_html
-            + "<h2>证据覆盖</h2><table><thead><tr><th>项目</th><th>状态</th><th>退出码</th><th>说明</th></tr></thead><tbody>" + coverage_html + "</tbody></table>"
-            "<h2>发现与整改建议</h2><table><thead><tr><th>编号</th><th>发现</th><th>等级</th><th>证据</th><th>整改前核查</th><th>适用性</th><th>影响与条件</th><th>步骤</th><th>回滚</th><th>复查</th><th>资料来源</th></tr></thead><tbody>"
-            + "".join(rows) + f"</tbody></table><h2>证据缺口与警告</h2><ul>{warnings}</ul>"
-            + _ai_html(metadata.get("ai_advisory")) + "</body></html>")
+            f"<h1>{html.escape(t('report.title'))}</h1><p class=\"status\">{html.escape(t('report.analysis_status'))}: {html.escape(result.status)}</p><p>{html.escape(t('report.asset_alias'))}: {html.escape(_safe(metadata.get('asset_alias')))} · {html.escape(t('report.bundle'))}: {html.escape(_safe(metadata.get('bundle_id')))}</p>"
+            + f"<p>{html.escape(t('report.untrusted'))}</p>"
+            + f"<h2>{html.escape(t('report.platform_support'))}</h2><p>{html.escape(_safe(support_status))} · {html.escape(_safe(support_source or t('report.no_source')))}</p><h2>{html.escape(t('report.hardware'))}</h2>" + summary_html
+            + f"<h2>{html.escape(t('report.coverage'))}</h2><table><thead><tr><th>{html.escape(t('report.item'))}</th><th>{html.escape(t('report.status'))}</th><th>{html.escape(t('report.exit_code'))}</th><th>{html.escape(t('report.reason'))}</th></tr></thead><tbody>" + coverage_html + "</tbody></table>"
+            f"<h2>{html.escape(t('report.html_badge'))}</h2><table><thead><tr>" + "".join(f"<th>{html.escape(label)}</th>" for label in labels) + f"<th>{html.escape(t('report.source_note'))}</th></tr></thead><tbody>"
+            + "".join(rows) + f"</tbody></table><h2>{html.escape(t('report.gaps'))}</h2><ul>{warnings}</ul>"
+            + _ai_html(metadata.get("ai_advisory"), language) + "</body></html>")
 
 
-def render_csv(result: AnalysisResult) -> str:
+def render_csv(result: AnalysisResult, language: str = "zh-CN") -> str:
+    validate_resources()
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=["analysis_status", "row_type", "gaps", "support_status", "finding_id", "title", "severity", "category", "precheck", "applicability", "evidence", "impact", "recommendation", "rollback", "verification_checkpoint", "references"])
-    writer.writeheader()
-    gaps = "; ".join(result.warnings + result.errors)
-    support_status, _support_source_text = _support_summary(result)
-    writer.writerow({"analysis_status": result.status, "row_type": "analysis_summary", "gaps": gaps or "无分析缺口记录", "support_status": support_status})
+    fields = ["analysis_status", "row_type", "gaps", "support_status", "finding_id", "title", "severity", "severity_label", "category", "description", "precheck", "applicability", "evidence", "impact", "recommendation", "rollback", "verification_checkpoint", "references", "translation_note"]
+    headers = [text("report.analysis_status", language), "row_type", text("report.gaps", language), text("support_status", language), text("report.finding_id", language), text("report.finding_title", language), text("report.severity", language), text("report.severity_meaning", language), text("category", language), text("report.description", language), text("report.precheck", language), text("report.applicability", language), text("report.evidence", language), text("report.impact", language), text("report.recommendation", language), text("report.rollback", language), text("report.verification", language), text("report.references", language), text("report.source_note", language)]
+    writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+    writer.writerow(dict(zip(fields, headers)))
+    gaps = "; ".join(gap_text(x, language) for x in result.warnings + result.errors)
+    support_status, _support_source_text = _support_summary(result, language)
+    writer.writerow({"analysis_status": result.status, "row_type": "analysis_summary", "gaps": gaps or text("gap.none", language), "support_status": support_status})
     if not result.findings:
-        writer.writerow({"analysis_status": result.status, "row_type": "finding_summary", "gaps": "没有确定性发现；未检查范围不代表安全"})
+        writer.writerow({"analysis_status": result.status, "row_type": "finding_summary", "gaps": text("gap.no_findings", language)})
     for finding in result.findings:
-        row = {key: finding.get(key, "") for key in writer.fieldnames}
-        row.update({"applicability": row["applicability"] or "版本/适用条件需人工核实",
-                    "impact": row["impact"] or "实施前评估服务影响及变更窗口",
-                    "recommendation": row["recommendation"] or "依据证据核实配置后，由获批人员实施变更",
-                    "rollback": row["rollback"] or "本工具未修改系统；获批变更前备份原配置并准备恢复步骤",
-                    "verification_checkpoint": row["verification_checkpoint"] or "按同一规则版本重新采集并人工复核"})
-        row.update({"analysis_status": result.status, "row_type": "finding", "gaps": gaps})
-        row["support_status"] = support_status
+        display = display_finding(finding, language)
+        row = {key: finding.get(key, "") for key in fields}
+        for field in ("title", "description", "impact", "recommendation", "verification_checkpoint", "precheck", "applicability", "rollback"):
+            if field in display:
+                row[field] = display[field]
+        row["translation_note"] = display.get("_locale_source_note", "")
+        row["severity_label"] = severity_explanation(finding.get("severity"), language)
+        for key, fallback in (("applicability", "report.fallback_applicability"), ("impact", "report.fallback_impact"), ("recommendation", "report.fallback_recommendation"), ("rollback", "report.fallback_rollback"), ("verification_checkpoint", "report.fallback_verification")):
+            row[key] = row[key] or text(fallback, language)
+        row.update({"analysis_status": result.status, "row_type": "finding", "gaps": gaps, "support_status": support_status})
         row["evidence"] = json.dumps(row["evidence"], ensure_ascii=False)
         row["references"] = "; ".join(str(value) for value in row["references"]) if isinstance(row["references"], list) else row["references"]
         writer.writerow({key: _csv_safe(value) for key, value in row.items()})
@@ -145,20 +160,21 @@ def _csv_safe(value: Any) -> str:
     return "'" + text if text.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")) else text
 
 
-def _ai_html(advisory: Any) -> str:
+def _ai_html(advisory: Any, language: str = "zh-CN") -> str:
     if not isinstance(advisory, dict):
         return ""
     rows = [f"<li>{html.escape(_safe(x.get('text')))} (refs: {html.escape(', '.join(x.get('evidence_refs', [])))})</li>"
             for x in advisory.get("suggestions", []) if isinstance(x, dict)] if isinstance(advisory.get("suggestions"), list) else []
-    reason = f"<p>{html.escape(_safe(advisory['reason']))}</p>" if advisory.get("reason") else ""
-    return f"<h2>AI辅助建议（非正式结论）</h2><p>状态：{html.escape(_safe(advisory.get('status')))}。建议与确定性发现分开，不改变分析结论。</p>{reason}<ul>{''.join(rows)}</ul>"
+    reason = f"<p>{html.escape(_safe(display_reason(advisory['reason'], language)))}</p>" if advisory.get("reason") else ""
+    return f"<h2>{html.escape(text('report.ai', language))}</h2><p>{html.escape(text('report.status', language))}: {html.escape(_safe(advisory.get('status')))}. {html.escape(text('report.ai_status', language))}</p>{reason}<ul>{''.join(rows)}</ul>"
 
 
-def write_reports(base: Path, result: AnalysisResult, metadata: dict[str, Any]) -> dict[str, Path]:
+def write_reports(base: Path, result: AnalysisResult, metadata: dict[str, Any], language: str = "zh-CN") -> dict[str, Path]:
+    validate_resources()
     base.mkdir(parents=True, exist_ok=False)
     outputs = {"md": base / "report.md", "html": base / "report.html", "csv": base / "findings.csv", "json": base / "analysis.json"}
-    outputs["md"].write_text(render_markdown(result, metadata), encoding="utf-8")
-    outputs["html"].write_text(render_html(result, metadata), encoding="utf-8")
-    outputs["csv"].write_text(render_csv(result), encoding="utf-8-sig", newline="")
+    outputs["md"].write_text(render_markdown(result, metadata, language), encoding="utf-8")
+    outputs["html"].write_text(render_html(result, metadata, language), encoding="utf-8")
+    outputs["csv"].write_text(render_csv(result, language), encoding="utf-8-sig", newline="")
     outputs["json"].write_text(json.dumps({"status": result.status, "metadata": metadata, **result.to_dict()}, ensure_ascii=False, indent=2), encoding="utf-8")
     return outputs
