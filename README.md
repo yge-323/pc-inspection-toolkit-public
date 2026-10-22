@@ -8,23 +8,15 @@ PC Inspection Toolkit is a read-only inspection and offline evidence-analysis to
 
 The desktop GUI supports Simplified Chinese and English. It opens in Simplified Chinese by default and remembers the interface language per Windows user.
 
-## Preview screens
-
-These original preview screens show the real Windows desktop application in Simplified Chinese. Paths shown are synthetic examples.
-
-![Overview](docs/assets/preview-overview.png)
-
-![Local inspection](docs/assets/preview-local-inspection.png)
-
-![Evidence import](docs/assets/preview-evidence-import.png)
-
 ## Languages and reports
 
 Choose **Simplified Chinese** or **English** from the interface-language selector in the top bar. The choice is saved in the current Windows user's application preferences. The report-language selector on **Analysis and reports** can follow the interface or explicitly choose Chinese or English; a language change does not reset that choice.
 
 The CLI defaults to Chinese regardless of the GUI preference. Use `--lang` to select CLI messages and `--report-lang` to choose report text independently. If `--report-lang` is omitted, reports follow `--lang`. Markdown, HTML, and CSV report text is localized; `analysis.json` keeps the same machine-readable content. Built-in findings and guidance have Chinese and English text. Custom rule text, raw evidence, paths, and diagnostics that are not application-owned phrases remain in their source form.
 
-The bilingual screenshots below were captured from the Windows source GUI with synthetic paths and example analysis data.
+## Screenshots
+
+The screenshots below were captured from the Windows source GUI with synthetic paths and example analysis data.
 
 ### Simplified Chinese
 
