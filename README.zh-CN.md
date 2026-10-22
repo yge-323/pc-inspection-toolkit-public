@@ -8,23 +8,15 @@ PC Inspection Toolkit 是供获授权维护工作使用的只读巡检与离线�
 
 桌面 GUI 支持简体中文和 English。默认打开简体中文，并按当前 Windows 用户保存界面语言偏好。
 
-## 预览界面
-
-以下是原有的简体中文 Windows 桌面应用预览图；截图中的路径为合成示例。
-
-![巡检概览](docs/assets/preview-overview.png)
-
-![本机巡检](docs/assets/preview-local-inspection.png)
-
-![证据导入](docs/assets/preview-evidence-import.png)
-
 ## 界面与报告语言
 
 可在顶部选择“简体中文”或“English”。界面语言保存在当前 Windows 用户的应用偏好中。“分析与报告”页面的报告语言可跟随界面，也可单独选择中文或英文；切换界面不会重置该选择。
 
 CLI 不读取 GUI 偏好，默认使用中文。使用 `--lang` 选择 CLI 提示语言，使用 `--report-lang` 单独选择报告语言；省略 `--report-lang` 时报告跟随 `--lang`。Markdown、HTML、CSV 报告文字会随语言切换，机器可读的 `analysis.json` 保持不变。内置 Finding 和整改说明提供中英文；自定义规则、原始证据、路径及非工具自有短语诊断保留来源文本。
 
-以下双语截图来自 Windows 源码 GUI，展示合成路径和示例分析数据。
+## 截图
+
+以下截图来自 Windows 源码 GUI，展示合成路径和示例分析数据。
 
 ### 简体中文
 
